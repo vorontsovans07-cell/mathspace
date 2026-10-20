@@ -15,25 +15,24 @@
   document.head.appendChild(st);
 
   function fixSqrt(s) {
-    const items = [['sqrt', '\\sqrt{'], ['cbrt', '\\sqrt[3]{']];
-    for (let k = 0; k < items.length; k++) {
-      const name = items[k][0], tpl = items[k][1];
-      let i;
-      while ((i = s.indexOf(name + '(')) >= 0) {
-        let d = 0, j = i + name.length;
-        for (; j < s.length; j++) {
-          if (s[j] === '(') d++;
-          else if (s[j] === ')') { d--; if (d === 0) break; }
-        }
-        if (j >= s.length) break;
-        s = s.slice(0, i) + tpl + s.slice(i + name.length + 1, j) + '}' + s.slice(j + 1);
+    const re = /(?:(\d+)(?:th|st|nd|rd)root|sqrt|cbrt)\(/;
+    let m;
+    while ((m = re.exec(s))) {
+      const i = m.index, open = i + m[0].length - 1;
+      let d = 0, j = open;
+      for (; j < s.length; j++) {
+        if (s[j] === '(') d++;
+        else if (s[j] === ')') { d--; if (d === 0) break; }
       }
+      if (j >= s.length) break;
+      const tpl = m[1] ? '\\sqrt[' + m[1] + ']{' : (m[0].indexOf('cbrt') === 0 ? '\\sqrt[3]{' : '\\sqrt{');
+      s = s.slice(0, i) + tpl + s.slice(open + 1, j) + '}' + s.slice(j + 1);
     }
     return s;
   }
 
-  const ATOM_A = '(?:\\d+(?:\\.\\d+)?)?(?:\\\\pi|\\\\sqrt(?:\\[3\\])?\\{[^{}]*\\}|[a-zA-Z])?(?:\\*[a-zA-Z])?';
-  const ATOM_B = '(?:\\d+(?:\\.\\d+)?)?(?:\\\\pi|\\\\sqrt(?:\\[3\\])?\\{[^{}]*\\}|[a-zA-Z])?';
+  const ATOM_A = '(?:\\d+(?:\\.\\d+)?)?(?:\\\\pi|\\\\sqrt(?:\\[\\d+\\])?\\{[^{}]*\\}|[a-zA-Z])?(?:\\*[a-zA-Z])?';
+  const ATOM_B = '(?:\\d+(?:\\.\\d+)?)?(?:\\\\pi|\\\\sqrt(?:\\[\\d+\\])?\\{[^{}]*\\}|[a-zA-Z])?';
   const FRAC = new RegExp('(' + ATOM_A + '|\\([^()]*\\))\\/(' + ATOM_B + '|\\([^()]*\\))', 'g');
 
   function toLatex(s) {
@@ -55,7 +54,7 @@
   }
 
   const RUN = /[A-Za-z0-9\\(\[\-+*\/^=<>|][A-Za-z0-9_^\/*+\-=<>()\[\]|.,;:'\s]*/g;
-  const SIGNAL = /[=^\/<>]|(sqrt|cbrt)\(|(^|[^A-Za-z])pi([^A-Za-z]|$)|(^|[^A-Za-z])(sin|cos|tg|ctg|tan|log|ln|lg|arcsin|arccos|arctg|arcctg)([^A-Za-z]|$)|\d[A-Za-z]/;
+  const SIGNAL = /[=^\/<>]|(sqrt|cbrt)\(|\d(th|st|nd|rd)root\(|(^|[^A-Za-z])pi([^A-Za-z]|$)|(^|[^A-Za-z])(sin|cos|tg|ctg|tan|log|ln|lg|arcsin|arccos|arctg|arcctg)([^A-Za-z]|$)|\d[A-Za-z]/;
   const SKIP = 'a,button,nav,textarea,input,select,option,script,style,noscript,code,pre,.katex,.no-math,[contenteditable]';
 
   function convertPlain(root) {
