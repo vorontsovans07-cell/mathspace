@@ -35,10 +35,10 @@
 
   function toLatex(s) {
     s = fixSqrt(s);
-    s = s.replace(/(?<![A-Za-z\\])pi(?![A-Za-z])/g, '\\pi');
-    s = s.replace(/(?<![A-Za-z\\])(arcsin|arccos|arctan|sin|cos|tan|log|ln|lg)(?![A-Za-z])/g, '\\$1');
-    s = s.replace(/(?<![A-Za-z\\])(arcctg|arctg|ctg|tg)(?![A-Za-z])/g, '\\operatorname{$1}');
-    s = s.replace(/(?<![A-Za-z\\])in\s+([ZNQR])(?![A-Za-z])/g, '\\in \\mathbb{$1}');
+        s = s.replace(/(^|[^A-Za-z\\])pi(?![A-Za-z])/g, '$1\\pi');
+    s = s.replace(/(^|[^A-Za-z\\])(arcsin|arccos|arctan|sin|cos|tan|log|ln|lg)(?![A-Za-z])/g, '$1\\$2');
+    s = s.replace(/(^|[^A-Za-z\\])(arcctg|arctg|ctg|tg)(?![A-Za-z])/g, '$1\\operatorname{$2}');
+    s = s.replace(/(^|[^A-Za-z\\])in\s+([ZNQR])(?![A-Za-z])/g, '$1\\in \\mathbb{$2}');
     s = s.replace(/\^\(([^()]*)\)/g, '^{$1}');
     s = s.replace(/\^(-?\d+(?:\.\d+)?|[A-Za-z])/g, '^{$1}');
     s = s.replace(FRAC, (m, a, b) => {
