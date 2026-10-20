@@ -1,194 +1,135 @@
-/* MathSpace · етап 12: розумна перевірка + статистика + розклад.
-   Підключається ПІСЛЯ усіх інших stage-файлів. */
+/* MathSpace · етап 12: вкладки «Прогрес» і «Розклад».
+   Підключається ПІСЛЯ stage11.js. Спершу виконайте 08_schedule.sql */
 (function () {
-  /* ===== НАЛАШТУВАННЯ (перевірте ці рядки) ===== */
-  const CFG = {
-    // як у вашому коді називається клієнт Supabase
-    client: () => window.sb || window.supabaseClient || window.supabaseClient2 ||
-      (window.supabase && window.supabase.from ? window.supabase : null),
-    attemptsTable: 'attempts',   // колонки: student_id, score, max_score, topic, created_at
-    lessonsTable: 'lessons',     // створюється SQL нижче
-    studentId: () => window.currentStudentId || (window.currentUser && window.currentUser.id) || null,
-    isTeacher: () => true        // замініть на вашу перевірку ролі
+  'use strict';
+  S.progSid = null;
+
+  const st = document.createElement('style');
+  st.textContent = `.bar{height:10px;border-radius:5px;background:#ece8f7;overflow:hidden;flex:1;min-width:80px}
+.bar i{display:block;height:100%;background:#e0566b}
+.bar.ok i{background:#2e9e5b}`;
+  document.head.appendChild(st);
+
+  const base = tabs;
+  window.tabs = function () {
+    const t = base();
+    const i = t.findIndex(x => x[0] === 'profile');
+    [['progress', 'Прогрес', '📊'], ['schedule', 'Розклад', '📅']].forEach(x => {
+      if (!t.some(y => y[0] === x[0])) t.splice(i < 0 ? t.length : i, 0, x);
+    });
+    return t;
   };
 
-  /* ===== 1. РОЗУМНЕ ПОРІВНЯННЯ ВІДПОВІДЕЙ ===== */
-  function norm(s) {
-    s = String(s).toLowerCase().trim()
-      .replace(/\$/g, '').replace(/[−–—]/g, '-')
-      .replace(/×|·|\\cdot|\\times/g, '*').replace(/÷/g, '/')
-      .replace(/π|\\pi/g, 'pi').replace(/√|\\sqrt/g, 'sqrt')
-      .replace(/\\left|\\right/g, '').replace(/\s+/g, '')
-      .replace(/(\d),(\d)/g, '$1.$2');
-    let prev;
-    do {
-      prev = s;
-      s = s.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, '(($1)/($2))');
-    } while (s !== prev);
-    return s.replace(/\{/g, '(').replace(/\}/g, ')');
+  const pct = (s, m) => (+m > 0 ? Math.round(100 * s / m) : 0);
+  const staff = () => S.profile.role !== 'student';
+
+  async function students() {
+    return (await getPeople()).filter(p => p.role === 'student');
   }
-  function evaluate(s) {
-    let i = 0;
-    const startsFactor = () => /[\d(.ps]/.test(s[i] || '');
-    function expr() {
-      let v = term();
-      while (s[i] === '+' || s[i] === '-') { const o = s[i++]; const t = term(); v = o === '+' ? v + t : v - t; }
-      return v;
+  function picker(list, cur, formName) {
+    return `<form data-form="${formName}" class="flex" style="margin-bottom:14px">
+      <select name="sid" style="max-width:320px">${list.map(s => `<option value="${esc(s.id)}"${s.id === cur ? ' selected' : ''}>${esc(fullName(s))}</option>`).join('')}</select>
+      <button class="btn small secondary">Показати</button></form>`;
+  }
+  F.pickprog = async function (f) { S.progSid = new FormData(f).get('sid'); renderApp(); };
+
+  /* ================= ПРОГРЕС ================= */
+  TAB.progress = async function () {
+    let sid = S.profile.id, head = '';
+    if (staff()) {
+      const list = await students();
+      if (!list.length) return '<div class="card"><div class="empty">Учнів поки немає.</div></div>';
+      if (!list.some(s => s.id === S.progSid)) S.progSid = list[0].id;
+      sid = S.progSid;
+      head = picker(list, sid, 'pickprog');
     }
-    function term() {
-      let v = unary();
-      while (i < s.length && (s[i] === '*' || s[i] === '/' || startsFactor())) {
-        if (s[i] === '*') { i++; v *= unary(); }
-        else if (s[i] === '/') { i++; v /= unary(); }
-        else v *= power();
+    const ls = await sb.from('lessons').select('id,title,lesson_no').eq('student_id', sid);
+    must(ls);
+    const title = Object.fromEntries(ls.data.map(l => [l.id, (l.lesson_no ? '№' + l.lesson_no + '. ' : '') + l.title]));
+    const ids = ls.data.map(l => l.id);
+    const at = ids.length ? await sb.from('attempts')
+      .select('id,lesson_id,created_at,status,auto_score,manual_score,max_score')
+      .in('lesson_id', ids).eq('status', 'graded').order('created_at', { ascending: true }) : { data: [] };
+    must(at);
+    const rows = at.data.filter(a => +a.max_score > 0);
+    if (!rows.length) return `<div class="card"><h2>Прогрес</h2>${head}<div class="empty">Перевірених спроб поки немає.</div></div>`;
+
+    const p = rows.map(a => pct(+a.auto_score + +a.manual_score, a.max_score));
+    const avg = Math.round(p.reduce((a, b) => a + b, 0) / p.length);
+    const W = 560, H = 150, n = p.length;
+    const X = i => (n === 1 ? W / 2 : 14 + i * (W - 28) / (n - 1));
+    const Y = v => H - 12 - v * (H - 24) / 100;
+    const line = p.map((v, i) => `${X(i)},${Y(v)}`).join(' ');
+    const dots = p.map((v, i) => `<circle cx="${X(i)}" cy="${Y(v)}" r="4" fill="#6d4aff"><title>${fmtDate(rows[i].created_at)}: ${v}%</title></circle>`).join('');
+
+    const byL = {};
+    rows.forEach(a => { const o = byL[a.lesson_id] = byL[a.lesson_id] || { best: 0, last: 0 }; const v = pct(+a.auto_score + +a.manual_score, a.max_score); o.best = Math.max(o.best, v); o.last = v; });
+    const lessonsHtml = Object.entries(byL).sort((a, b) => a[1].last - b[1].last).map(([id, o]) =>
+      `<div class="row"><span style="flex:1.3">${esc(title[id] || 'Урок')}</span><div class="bar${o.last >= 70 ? ' ok' : ''}"><i style="width:${o.last}%"></i></div><b>${o.last}%</b></div>`).join('');
+
+    let weak = '';
+    if (staff()) {
+      const an = await sb.from('attempt_answers').select('points_awarded,snapshot').in('attempt_id', rows.map(a => a.id));
+      if (!an.error) {
+        const g = {};
+        an.data.forEach(a => {
+          const s = a.snapshot || {}, max = +s.points;
+          if (!s.prompt || !(max > 0) || a.points_awarded == null) return;
+          const k = String(s.prompt).slice(0, 70);
+          const o = g[k] = g[k] || { got: 0, max: 0, n: 0 };
+          o.got += +a.points_awarded; o.max += max; o.n++;
+        });
+        const top = Object.entries(g).map(([k, o]) => [k, pct(o.got, o.max), o.n]).filter(x => x[1] < 70).sort((a, b) => a[1] - b[1]).slice(0, 6);
+        if (top.length) weak = `<div class="card"><h2>Завдання, де найбільше помилок</h2>${top.map(([k, v, c]) =>
+          `<div class="row"><span style="flex:1.3">${esc(k)}${k.length >= 70 ? '…' : ''} <span class="muted small">(спроб: ${c})</span></span><div class="bar"><i style="width:${100 - v}%"></i></div><b>${v}%</b></div>`).join('')}</div>`;
       }
-      return v;
     }
-    function unary() {
-      if (s[i] === '-') { i++; return -unary(); }
-      if (s[i] === '+') { i++; return unary(); }
-      return power();
-    }
-    function power() { const b = atom(); if (s[i] === '^') { i++; return Math.pow(b, unary()); } return b; }
-    function atom() {
-      if (s[i] === '(') { i++; const v = expr(); if (s[i++] !== ')') throw 0; return v; }
-      if (s.startsWith('pi', i)) { i += 2; return Math.PI; }
-      if (s.startsWith('sqrt', i)) { i += 4; return Math.sqrt(atom()); }
-      const m = /^\d*\.?\d+/.exec(s.slice(i));
-      if (!m) throw 0;
-      i += m[0].length; return parseFloat(m[0]);
-    }
-    const r = expr(); if (i !== s.length) throw 0; return r;
-  }
-  function single(A, B) {
-    if (A === B) return true;
-    try {
-      const x = evaluate(A), y = evaluate(B);
-      return isFinite(x) && isFinite(y) && Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x), Math.abs(y));
-    } catch (e) { return false; }
-  }
-  window.mathAnswerEqual = function (student, correct) {
-    const sa = String(student).split(';').map(norm).filter(Boolean).sort();
-    const ca = String(correct).split(';').map(norm).filter(Boolean).sort();
-    return sa.length === ca.length && sa.every((x, k) => single(x, ca[k]));
+
+    return `<div class="card"><h2>Прогрес</h2>${head}
+      <p>Перевірених спроб: <b>${n}</b> · середній бал: <b>${avg}%</b> · остання: <b>${p[n - 1]}%</b></p>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;background:#f7f5fc;border-radius:12px"><polyline fill="none" stroke="#6d4aff" stroke-width="3" points="${line}"/>${dots}</svg></div>
+      <div class="card"><h2>За уроками (остання спроба)</h2>${lessonsHtml}</div>${weak}`;
   };
 
-  /* ===== 2. ІНТЕРФЕЙС: кнопка + вікно ===== */
-  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  /* ================= РОЗКЛАД ================= */
+  F.pickplan = async function (f) { S.progSid = new FormData(f).get('sid'); renderApp(); };
+  const dtfmt = iso => new Date(iso).toLocaleString('uk-UA', { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
 
-  const css = document.createElement('style');
-  css.textContent = `
-#ms12-btn{position:fixed;right:16px;bottom:16px;z-index:9998;padding:10px 16px;border:0;border-radius:24px;
- background:#4f46e5;color:#fff;font:600 15px system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer}
-#ms12-ov{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:12px}
-#ms12-box{background:#fff;color:#111;width:min(640px,100%);max-height:90vh;overflow:auto;border-radius:14px;padding:18px;font:16px/1.5 system-ui,sans-serif}
-#ms12-box h3{margin:.4em 0}
-.ms12-tabs{display:flex;gap:8px;margin-bottom:12px}
-.ms12-tabs button{flex:1;padding:8px;border:1px solid #c7c7d1;border-radius:8px;background:#f4f4f8;cursor:pointer;font:inherit}
-.ms12-tabs button.on{background:#4f46e5;color:#fff;border-color:#4f46e5}
-.ms12-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #eee}
-.ms12-bar{height:8px;border-radius:4px;background:#e5e7eb;overflow:hidden;min-width:90px;flex:1}
-.ms12-bar i{display:block;height:100%;background:#ef4444}
-.ms12-box input,.ms12-box button.act{font:inherit;padding:7px 9px;border:1px solid #c7c7d1;border-radius:8px}
-.ms12-close{float:right;border:0;background:none;font-size:24px;cursor:pointer}
-.ms12-muted{color:#6b7280;font-size:14px}`;
-  document.head.appendChild(css);
-
-  const btn = document.createElement('button');
-  btn.id = 'ms12-btn'; btn.textContent = '📊 Прогрес і розклад';
-  const ov = document.createElement('div');
-  ov.id = 'ms12-ov';
-  ov.innerHTML = '<div id="ms12-box" class="ms12-box"></div>';
-  document.body.append(btn, ov);
-  const box = ov.firstChild;
-  let tab = 'stats';
-
-  btn.onclick = () => { ov.style.display = 'flex'; render(); };
-  ov.onclick = e => { if (e.target === ov) ov.style.display = 'none'; };
-
-  function shell(inner) {
-    box.innerHTML = `<button class="ms12-close" aria-label="Закрити">×</button>
-      <div class="ms12-tabs">
-        <button data-t="stats" class="${tab === 'stats' ? 'on' : ''}">📊 Прогрес</button>
-        <button data-t="plan" class="${tab === 'plan' ? 'on' : ''}">📅 Розклад</button>
-      </div><div id="ms12-body">${inner}</div>`;
-    box.querySelector('.ms12-close').onclick = () => ov.style.display = 'none';
-    box.querySelectorAll('.ms12-tabs button').forEach(b => b.onclick = () => { tab = b.dataset.t; render(); });
-  }
-  function render() {
-    shell('<p class="ms12-muted">Завантаження…</p>');
-    (tab === 'stats' ? renderStats() : renderPlan()).catch(e => {
-      console.warn(e);
-      box.querySelector('#ms12-body').innerHTML =
-        '<p>Не вдалося завантажити дані. Перевірте, що виконано SQL для етапу 12 і що назви таблиць у блоці НАЛАШТУВАННЯ збігаються з вашими.</p>';
-    });
-  }
-
-  /* ===== 3. СТАТИСТИКА ===== */
-  async function renderStats() {
-    const db = CFG.client(); if (!db) throw new Error('no client');
-    let q = db.from(CFG.attemptsTable).select('*').order('created_at', { ascending: true }).limit(500);
-    const sid = CFG.studentId();
-    if (!CFG.isTeacher() && sid) q = q.eq('student_id', sid);
-    const { data, error } = await q; if (error) throw error;
-    const rows = (data || []).filter(r => +r.max_score > 0);
-    if (!rows.length) { box.querySelector('#ms12-body').innerHTML = '<p>Поки немає результатів.</p>'; return; }
-
-    const pct = rows.map(r => Math.round(100 * r.score / r.max_score));
-    const avg = Math.round(pct.reduce((a, b) => a + b, 0) / pct.length);
-    const W = 560, H = 160, n = pct.length;
-    const pts = pct.map((p, i) => `${n === 1 ? W / 2 : 10 + i * (W - 20) / (n - 1)},${H - 10 - p * (H - 20) / 100}`).join(' ');
-
-    const topics = {};
-    rows.forEach(r => {
-      const t = r.topic || 'Без теми';
-      (topics[t] = topics[t] || { s: 0, m: 0 });
-      topics[t].s += +r.score; topics[t].m += +r.max_score;
-    });
-    const tl = Object.entries(topics).map(([t, v]) => [t, Math.round(100 * v.s / v.m)]).sort((a, b) => a[1] - b[1]);
-
-    box.querySelector('#ms12-body').innerHTML = `
-      <p>Робіт: <b>${n}</b> · середній бал: <b>${avg}%</b> · остання: <b>${pct[n - 1]}%</b></p>
-      <svg viewBox="0 0 ${W} ${H}" style="width:100%;background:#f8f8fc;border-radius:10px">
-        <polyline fill="none" stroke="#4f46e5" stroke-width="3" points="${pts}"/></svg>
-      <h3>Слабкі теми</h3>
-      ${tl.map(([t, p]) => `<div class="ms12-row"><span style="flex:1.2">${esc(t)}</span>
-        <div class="ms12-bar"><i style="width:${100 - p}%"></i></div><b>${p}%</b></div>`).join('')}
-      <p class="ms12-muted">Червона смужка показує, скільки балів втрачено.</p>`;
-  }
-
-  /* ===== 4. РОЗКЛАД ===== */
-  async function renderPlan() {
-    const db = CFG.client(); if (!db) throw new Error('no client');
+  TAB.schedule = async function () {
+    const isT = staff();
+    const list = isT ? await students() : [];
+    const names = Object.fromEntries(list.map(s => [s.id, fullName(s)]));
     const from = new Date(Date.now() - 3600e3).toISOString();
-    const { data, error } = await db.from(CFG.lessonsTable).select('*')
-      .gte('starts_at', from).order('starts_at', { ascending: true }).limit(100);
+    const r = await sb.from('lesson_schedule').select('*').gte('starts_at', from).order('starts_at', { ascending: true }).limit(100);
+    if (r.error) throw new Error('Не вдалося завантажити розклад. Перевірте, що виконано 08_schedule.sql.');
+    const items = r.data.map(l => `<div class="row"><div><b>${dtfmt(l.starts_at)}</b>${isT ? ' · ' + esc(names[l.student_id] || '') : ''}<br>${esc(l.title)}${l.note ? `<br><span class="muted small">${esc(l.note)}</span>` : ''}</div>
+      ${isT ? `<button class="btn small danger" data-act="delsched" data-id="${l.id}">Видалити</button>` : ''}</div>`).join('') || '<div class="empty">Найближчих уроків немає.</div>';
+    const add = isT ? `<div class="card"><h2>Додати урок у розклад</h2>
+      <form data-form="addsched"><div class="field"><label>Учень</label><select name="sid">${list.map(s => `<option value="${esc(s.id)}">${esc(fullName(s))}</option>`).join('')}</select></div>
+      <div class="two"><div class="field"><label>Дата й час</label><input type="datetime-local" name="dt" required></div>
+      <div class="field"><label>Тема</label><input name="title" required maxlength="200"></div></div>
+      <div class="field"><label>Нотатка (необов’язково)</label><input name="note" maxlength="500"></div>
+      <button class="btn">Додати</button></form></div>` : '';
+    return `<div class="card"><h2>Найближчі уроки</h2>${items}</div>${add}`;
+  };
+
+  F.addsched = async function (f) {
+    const d = new FormData(f);
+    const sid = d.get('sid'), dt = d.get('dt');
+    if (!sid || !dt) throw new Error('Оберіть учня, дату й час');
+    const { error } = await sb.from('lesson_schedule').insert({
+      student_id: sid, teacher_id: S.profile.id,
+      starts_at: new Date(dt).toISOString(), title: String(d.get('title')).trim(),
+      note: String(d.get('note') || '').trim() || null });
     if (error) throw error;
-    const fmt = d => new Date(d).toLocaleString('uk-UA', { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
-    const teacher = CFG.isTeacher();
-    box.querySelector('#ms12-body').innerHTML = `
-      ${(data || []).map(l => `<div class="ms12-row"><div><b>${fmt(l.starts_at)}</b><br>${esc(l.title)}
-        ${l.note ? `<br><span class="ms12-muted">${esc(l.note)}</span>` : ''}</div>
-        ${teacher ? `<button class="act" data-del="${l.id}">🗑</button>` : ''}</div>`).join('') || '<p>Найближчих уроків немає.</p>'}
-      ${teacher ? `<h3>Додати урок</h3>
-        <div style="display:grid;gap:8px">
-          <input id="ms12-dt" type="datetime-local">
-          <input id="ms12-ti" placeholder="Тема / назва уроку">
-          <input id="ms12-no" placeholder="Нотатка (необов'язково)">
-          <button class="act" id="ms12-add" style="background:#4f46e5;color:#fff;border:0">Додати</button>
-        </div>` : ''}`;
-    box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
-      await db.from(CFG.lessonsTable).delete().eq('id', b.dataset.del); render();
-    });
-    const add = box.querySelector('#ms12-add');
-    if (add) add.onclick = async () => {
-      const dt = box.querySelector('#ms12-dt').value, ti = box.querySelector('#ms12-ti').value.trim();
-      if (!dt || !ti) return alert('Вкажіть дату, час і тему');
-      const row = { starts_at: new Date(dt).toISOString(), title: ti, note: box.querySelector('#ms12-no').value.trim() || null };
-      const { error: e } = await db.from(CFG.lessonsTable).insert(row);
-      if (e) return alert('Помилка: ' + e.message);
-      render();
-    };
-  }
+    toast('Урок додано');
+    renderApp();
+  };
+  A.delsched = async function (el) {
+    const { error } = await sb.from('lesson_schedule').delete().eq('id', el.dataset.id);
+    if (error) throw error;
+    renderApp();
+  };
+
+  if (S.profile) renderApp();
 })();
