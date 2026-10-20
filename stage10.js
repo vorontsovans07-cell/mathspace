@@ -7,9 +7,9 @@
   /* ================= стилі ================= */
   const st = document.createElement('style');
   st.textContent = `.qpanel{display:flex;flex-wrap:wrap;gap:8px;position:sticky;top:8px;z-index:4;padding:12px 14px}
-.qn{min-width:40px;height:40px;padding:0 6px;border:1px solid #4a90c2;border-radius:10px;background:transparent;color:#4a90c2;font-weight:700;font-size:15px;cursor:pointer}
+.qn{min-width:40px;height:40px;padding:0 6px;border:1px solid var(--brand,#6d4aff);border-radius:10px;background:transparent;color:var(--brand,#6d4aff);font-weight:700;font-size:15px;cursor:pointer}
 .qn.cur{border-width:3px}
-.qn.done{background:#4a90c2;color:#fff}
+.qn.done{background:var(--brand,#6d4aff);color:#fff}
 .qnav{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;align-items:center}
 .qsaved{font-size:14px;color:#2e9e5b}`;
   document.head.appendChild(st);
