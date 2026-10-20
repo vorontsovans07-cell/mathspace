@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MathSpace</title>
+<style>
+:root{--bg:#f8f7fc;--card:#fff;--ink:#302846;--muted:#8a809d;--line:#ebe8f2;--brand:#7660dd;--brand-d:#5e49c7;--soft:#f0ebff;--blue:#e6f0ff;--green:#e8f8ef;--amber:#fff4db;--red:#fff0f0;color-scheme:light}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+button,input,select{font:inherit}
+button{cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+a{color:var(--brand-d)}
+h1{font-size:28px;margin:0}
+h2{font-size:19px;margin:0 0 14px}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.eyebrow{color:#8478ae;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.boot,.empty{padding:26px;text-align:center;color:var(--muted)}
+.empty{background:#faf9fd;border-radius:14px}
+
+/* картки та кнопки */
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:22px;margin-bottom:18px;box-shadow:0 6px 24px rgba(39,26,84,.04)}
+.hero{background:linear-gradient(120deg,#eae3ff,#e6f0ff);border:0}
+.hero h2{font-size:26px;margin:6px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:18px}
+.grid .card{margin:0}
+.stat{font-size:30px;font-weight:800;color:var(--brand-d);margin-top:6px;word-break:break-word}
+.pill{display:inline-block;background:var(--soft);color:#6c58c4;border-radius:20px;padding:4px 11px;font-size:12px;font-weight:600}
+.pill.green{background:var(--green);color:#208a58}
+.pill.amber{background:var(--amber);color:#a8780c}
+.pill.blue{background:var(--blue);color:#2f6bc2}
+.btn{background:var(--brand);color:#fff;border:0;border-radius:12px;padding:11px 18px;font-weight:650}
+.btn:hover:not(:disabled){background:var(--brand-d)}
+.btn.secondary{background:var(--soft);color:var(--brand-d)}
+.btn.danger{background:var(--red);color:#a33f4e}
+.btn.small{padding:7px 12px;font-size:13px;border-radius:10px}
+.notice{padding:12px 14px;border-radius:12px;background:#f4efff;color:#624db8;font-size:14px;margin:12px 0}
+.notice.bad{background:#fff0f0;color:#a33f4e}
+.notice.warn{background:var(--amber);color:#8c630d}
+
+/* форми */
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:14px;min-width:0}
+.field label{font-size:13px;font-weight:700;color:#716881}
+input,select{width:100%;border:1px solid #e3dfed;border-radius:12px;padding:11px 13px;background:#fff;color:var(--ink)}
+input:focus,select:focus{outline:2px solid #cfc4fb;border-color:var(--brand)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.flex{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+
+/* списки */
+.row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 0;border-bottom:1px solid #f0edf5;flex-wrap:wrap}
+.row:last-child{border-bottom:0}
+.who{display:flex;align-items:center;gap:12px;min-width:0}
+.who b{word-break:break-word}
+.end{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.end select{width:auto;max-width:210px}
+
+/* аватари */
+.av{width:40px;height:40px;flex:none;border-radius:50%;background:#e4dcff center/cover no-repeat;color:var(--brand-d);display:inline-grid;place-items:center;font-weight:700;font-size:14px;overflow:hidden}
+.av.lg{width:112px;height:112px;font-size:38px}
+.avlink{text-decoration:none}
+
+/* вхід / реєстрація */
+.auth{min-height:100vh;display:grid;place-items:center;padding:20px;background:radial-gradient(circle at 20% 10%,#ece6ff,transparent 45%),radial-gradient(circle at 85% 90%,#e1efff,transparent 45%),var(--bg)}
+.auth-card{width:100%;max-width:440px;background:#fff;border-radius:24px;padding:30px;border:1px solid var(--line);box-shadow:0 14px 50px rgba(60,40,140,.09)}
+.auth-card h1{font-size:24px;margin:10px 0 16px}
+.logo,.brand{font-size:22px;font-weight:800;color:var(--brand-d);display:flex;align-items:center;gap:8px}
+.logo-dot{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--brand);color:#fff;font-weight:700}
+.auth-card p{margin:12px 0 0}
+
+/* каркас застосунку */
+.app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
+.side{background:#fff;border-right:1px solid var(--line);padding:24px 14px;display:flex;flex-direction:column;gap:8px;position:sticky;top:0;height:100vh}
+.side .brand{padding:6px 10px 20px}
+.side nav{display:flex;flex-direction:column;gap:4px}
+.nav{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;color:#6e6680;text-decoration:none;font-weight:500}
+.nav:hover{background:#f7f4ff}
+.nav.active{background:var(--soft);color:var(--brand-d);font-weight:700}
+.userbox{margin-top:auto;display:flex;align-items:center;gap:10px;padding:12px 8px;border-top:1px solid var(--line)}
+.ub{display:flex;flex-direction:column;min-width:0}
+.ub b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.main{padding:30px;max-width:1100px;width:100%;margin:0 auto}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px}
+.bottom{display:none}
+
+.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,30px);background:#302846;color:#fff;padding:12px 18px;border-radius:14px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:50;max-width:90vw;text-align:center}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.bad{background:#a33f4e}
+
+@media(max-width:860px){
+  .app{display:block}
+  .side{display:none}
+  .main{padding:18px 16px 96px}
+  h1{font-size:23px}
+  .two{grid-template-columns:1fr}
+  .bottom{display:flex;position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px));justify-content:space-around;z-index:20}
+  .bottom .nav{flex-direction:column;gap:2px;padding:7px 8px;font-size:11px;flex:1;text-align:center;border-radius:10px}
+  .bottom .ic{font-size:19px}
+  .toast{bottom:84px}
+}
+</style>
+</head>
+<body>
+<div id="app"><div class="boot">Завантаження…</div></div>
+<div id="toast" class="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.110.1"></script>
+<script>
+/* ===== Налаштування (публічні значення, їх безпечно зберігати в коді) ===== */
+const SUPABASE_URL = 'https://kldbsleslmltzjeqtfhg.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_klUmWt6iMk_IWai_Dh7INA_cSbJO6fB';
+
+if (!window.supabase) {
+  document.getElementById('app').innerHTML = '<div class="boot">Не вдалося завантажити бібліотеку Supabase. Перевірте інтернет і оновіть сторінку.</div>';
+  throw new Error('supabase-js not loaded');
+}
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+  auth: { flowType: 'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+});
+
+/* ===== Допоміжні ===== */
+const S = { session: null, uid: null, profile: null, recovery: false, loadId: 0 };
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ROLE = { owner: 'Власниця', admin: 'Адміністратор', teacher: 'Викладач', student: 'Учень' };
+const ROLE_CAB = { owner: 'Кабінет власниці', admin: 'Адміністративний кабінет', teacher: 'Кабінет викладача', student: 'Кабінет учня' };
+const fullName = p => [p.first_name, p.last_name].filter(Boolean).join(' ');
+const initials = p => ((p.first_name || '?').charAt(0) + (p.last_name || '').charAt(0)).toUpperCase();
+const fmtDate = d => new Date(d).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const redirectUrl = () => location.origin + location.pathname;
+
+let toastT;
+function toast(msg, bad) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (bad ? ' bad' : '');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => { t.className = 'toast'; }, 4800);
+}
+
+function uaErr(e) {
+  const m = String((e && e.message) || e || 'Невідома помилка');
+  const map = [
+    [/invalid login credentials/i, 'Невірний email або пароль'],
+    [/email not confirmed/i, 'Спершу підтвердьте email: перевірте пошту'],
+    [/database error saving new user/i, 'Реєстрація неможлива: запрошення недійсне, або вашу адресу ще не дозволила власниця чи адміністратор'],
+    [/already registered|already been registered/i, 'Цей email уже зареєстровано'],
+    [/rate limit|too many/i, 'Забагато спроб або листів. Зачекайте трохи й повторіть'],
+    [/password should be at least/i, 'Пароль занадто короткий'],
+    [/same password/i, 'Новий пароль має відрізнятися від поточного'],
+    [/failed to fetch|networkerror|load failed/i, 'Немає зв’язку із сервером. Перевірте інтернет']
+  ];
+  for (const [re, txt] of map) if (re.test(m)) return txt;
+  return m;
+}
+
+/* ===== Аватари (приватне сховище, підписані посилання) ===== */
+const avCache = new Map();
+function avatarHtml(p, cls = '') {
+  const attr = p.avatar_path ? ` data-av="${esc(p.avatar_path)}"` : '';
+  return `<span class="av ${cls}"${attr}>${esc(initials(p))}</span>`;
+}
+async function hydrateAvatars() {
+  const els = [...document.querySelectorAll('[data-av]:not([data-done])')];
+  if (!els.length) return;
+  const need = [...new Set(els.map(e => e.dataset.av))].filter(p => { const c = avCache.get(p); return !c || c.exp < Date.now(); });
+  if (need.length) {
+    const { data } = await sb.storage.from('avatars').createSignedUrls(need, 3600);
+    (data || []).forEach(r => { if (r.signedUrl && r.path) avCache.set(r.path, { url: r.signedUrl, exp: Date.now() + 3300 * 1000 }); });
+  }
+  els.forEach(e => {
+    const c = avCache.get(e.dataset.av);
+    if (c && e.isConnected) {
+      e.style.backgroundImage = `url("${c.url.replace(/"/g, '%22')}")`;
+      e.textContent = '';
+      e.dataset.done = '1';
+    }
+  });
+}
+
+async function resizeToJpeg(file, max = 512) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = () => rej(new Error('Не вдалося прочитати зображення'));
+      i.src = url;
+    });
+    const sc = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.naturalWidth * sc));
+    c.height = Math.max(1, Math.round(img.naturalHeight * sc));
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    return await new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('Не вдалося обробити зображення')), 'image/jpeg', 0.88));
+  } finally { URL.revokeObjectURL(url); }
+}
+
+/* ===== Екрани авторизації ===== */
+const authShell = inner => {
+  const warn = location.protocol === 'file:'
+    ? '<div class="notice warn small">Сторінку відкрито як локальний файл. Вхід за паролем може працювати, але листи підтвердження — ні. Розмістіть сайт на GitHub Pages.</div>' : '';
+  return `<div class="auth"><div class="auth-card"><div class="logo"><span class="logo-dot">∑</span> MathSpace</div>${warn}${inner}</div></div>`;
+};
+
+const registerForm = (code, title, lead) => `
+  <h1>${esc(title)}</h1>${lead ? `<p class="muted">${lead}</p>` : ''}
+  <form data-form="register" data-code="${esc(code || '')}">
+    <div class="two">
+      <div class="field"><label>Ім’я</label><input name="first" required maxlength="60" autocomplete="given-name"></div>
+      <div class="field"><label>Прізвище</label><input name="last" maxlength="60" autocomplete="family-name"></div>
+    </div>
+    <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
+    <div class="field"><label>Пароль (щонайменше 8 символів)</label><input name="pw" type="password" required minlength="8" autocomplete="new-password"></div>
+    <div class="field"><label>Повторіть пароль</label><input name="pw2" type="password" required minlength="8" autocomplete="new-password"></div>
+    <button class="btn" style="width:100%">Зареєструватися</button>
+  </form>
+  <p class="small"><a href="#/login">← Уже маю обліковий запис</a></p>`;
+
+async function renderAuth() {
+  const h = location.hash;
+  let html;
+  if (h.startsWith('#/join/')) {
+    const code = decodeURIComponent(h.slice(7)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 40);
+    $('#app').innerHTML = authShell('<div class="boot">Перевіряємо запрошення…</div>');
+    const { data, error } = await sb.rpc('get_invite_teacher', { p_code: code });
+    const t = !error && data && data[0];
+    html = t
+      ? registerForm(code, 'Реєстрація учня', `Викладач: <b>${esc(fullName(t))}</b>`)
+      : `<h1>Запрошення недійсне</h1><div class="notice bad">Посилання застаріло або введене з помилкою. Попросіть викладача надіслати його ще раз.</div><p class="small"><a href="#/login">← До входу</a></p>`;
+  } else if (h === '#/register') {
+    html = registerForm('', 'Реєстрація викладача або власниці', 'Працює лише для email, який дозволила власниця чи адміністратор (або для email власниці під час першого запуску).');
+  } else if (h === '#/forgot') {
+    html = `<h1>Відновлення пароля</h1>
+      <form data-form="forgot"><div class="field"><label>Email</label><input name="email" type="email" required></div>
+      <button class="btn" style="width:100%">Надіслати лист</button></form>
+      <p class="small"><a href="#/login">← До входу</a></p>`;
+  } else {
+    html = `<h1>Вхід</h1>
+      <form data-form="login">
+        <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
+        <div class="field"><label>Пароль</label><input name="pw" type="password" required autocomplete="current-password"></div>
+        <button class="btn" style="width:100%">Увійти</button>
+      </form>
+      <p class="small"><a href="#/forgot">Забули пароль?</a></p>
+      <p class="small muted">Учень? Скористайтеся посиланням від вашого викладача.<br><a href="#/register">Реєстрація викладача або власниці</a></p>`;
+  }
+  $('#app').innerHTML = authShell(html);
+}
+
+function renderRecovery() {
+  $('#app').innerHTML = authShell(`<h1>Новий пароль</h1>
+    <form data-form="recovery">
+      <div class="field"><label>Новий пароль (щонайменше 8 символів)</label><input name="pw" type="password" required minlength="8" autocomplete="new-password"></div>
+      <button class="btn" style="width:100%">Зберегти пароль</button>
+    </form>`);
+}
+
+function renderMailSent(email) {
+  $('#app').innerHTML = authShell(`<h1>Перевірте пошту</h1>
+    <div class="notice">Ми надіслали лист на <b>${esc(email)}</b>. Перейдіть за посиланням у ньому, щоб підтвердити email, і ви увійдете автоматично.</div>
+    <p class="small muted">Не бачите листа? Перевірте «Спам». Безкоштовна пошта Supabase має невеликий ліміт листів на годину.</p>
+    <p class="small"><a href="#/login">← До входу</a></p>`);
+}
+
+/* ===== Каркас застосунку ===== */
+function tabs() {
+  const r = S.profile.role;
+  const t = [['dashboard', 'Головна', '🏠']];
+  if (r === 'teacher') t.push(['students', 'Мої учні', '👥'], ['invite', 'Запрошення', '🔗']);
+  if (r === 'owner' || r === 'admin') t.push(['teachers', 'Викладачі', '🎓'], ['students', 'Учні', '👥'], ['audit', 'Журнал', '📜']);
+  t.push(['profile', 'Профіль', '👤']);
+  return t;
+}
+function curTab() {
+  const m = location.hash.match(/^#\/t\/([a-z]+)/);
+  const k = m && m[1];
+  return tabs().some(t => t[0] === k) ? k : 'dashboard';
+}
+
+function renderApp() {
+  const me = S.profile, tl = tabs(), tab = curTab();
+  const title = tl.find(t => t[0] === tab)[1];
+  const nav = tl.map(([k, l, i]) => `<a class="nav${k === tab ? ' active' : ''}" href="#/t/${k}"><span class="ic">${i}</span><span>${l}</span></a>`).join('');
+  $('#app').innerHTML = `<div class="app">
+    <aside class="side">
+      <div class="brand"><span class="logo-dot">∑</span> MathSpace</div>
+      <nav>${nav}</nav>
+      <div class="userbox">${avatarHtml(me)}<div class="ub"><b>${esc(fullName(me))}</b><span class="muted small">${ROLE[me.role]}</span></div></div>
+      <button class="btn secondary small" data-act="logout">Вийти</button>
+    </aside>
+    <main class="main">
+      <header class="top"><div><div class="eyebrow">${ROLE_CAB[me.role]}</div><h1>${esc(title)}</h1></div><a href="#/t/profile" class="avlink" title="Профіль">${avatarHtml(me)}</a></header>
+      <div id="content"><div class="empty">Завантаження…</div></div>
+    </main>
+    <nav class="bottom">${nav}</nav>
+  </div>`;
+  hydrateAvatars();
+  const id = ++S.loadId;
+  TAB[tab]().then(html => {
+    if (id !== S.loadId) return;
+    $('#content').innerHTML = html;
+    hydrateAvatars();
+  }).catch(err => {
+    if (id !== S.loadId) return;
+    $('#content').innerHTML = `<div class="notice bad">Не вдалося завантажити дані: ${esc(uaErr(err))}</div>`;
+  });
+}
+
+async function getPeople() {
+  const { data, error } = await sb.from('profiles')
+    .select('id,role,email,first_name,last_name,avatar_path,teacher_id,invite_code,created_at')
+    .order('created_at');
+  if (error) throw error;
+  return data;
+}
+const personRow = (p, end = '', sub = null) => `<div class="row"><div class="who">${avatarHtml(p)}<div><b>${esc(fullName(p))}</b><div class="muted small">${esc(sub ?? p.email)}</div></div></div><div class="end">${end}</div></div>`;
+const statCard = (label, val) => `<div class="card"><div class="muted">${esc(label)}</div><div class="stat">${esc(val)}</div></div>`;
+
+/* ===== Вкладки ===== */
+const TAB = {
+  async dashboard() {
+    const me = S.profile, ppl = await getPeople();
+    let stats = '';
+    if (me.role === 'student') {
+      const t = ppl.find(p => p.id === me.teacher_id);
+      stats = statCard('Мій викладач', t ? fullName(t) : '—');
+    } else if (me.role === 'teacher') {
+      stats = statCard('Мої учні', ppl.filter(p => p.role === 'student').length);
+    } else {
+      stats = statCard('Викладачів', ppl.filter(p => p.role === 'teacher').length)
+        + statCard('Адміністраторів', ppl.filter(p => p.role === 'admin').length)
+        + statCard('Учнів', ppl.filter(p => p.role === 'student').length);
+    }
+    return `<div class="card hero"><div class="eyebrow">Вітаємо у MathSpace</div><h2>Привіт, ${esc(me.first_name)}! 👋</h2><span class="pill">${ROLE[me.role]}</span></div>
+      <div class="grid">${stats}</div>
+      <div class="card"><h2>Що вже працює</h2>
+        <p class="muted">Вхід, ролі й права доступу, реєстрація учнів за посиланням викладача, профіль із фото, керування викладачами й адміністраторами, перенесення учнів та журнал дій.</p>
+        <p class="muted">Уроки, тести, розклад і фінанси з’являться в наступних етапах.</p></div>`;
+  },
+
+  async teachers() {
+    const me = S.profile;
+    const [ppl, al] = await Promise.all([getPeople(), sb.from('teacher_allowlist').select('*').order('created_at', { ascending: false })]);
+    if (al.error) throw al.error;
+    const pending = al.data.filter(a => !a.used_at);
+    const staff = ppl.filter(p => p.role === 'teacher' || p.role === 'admin');
+    const rows = staff.map(p => {
+      const n = ppl.filter(s => s.teacher_id === p.id).length;
+      const btn = me.role === 'owner'
+        ? (p.role === 'teacher'
+          ? `<button class="btn small secondary" data-act="setadmin" data-id="${esc(p.id)}" data-make="1">Призначити адміністратором</button>`
+          : `<button class="btn small danger" data-act="setadmin" data-id="${esc(p.id)}" data-make="0">Зняти роль адміністратора</button>`)
+        : '';
+      return personRow(p, `<span class="pill ${p.role === 'admin' ? 'blue' : ''}">${ROLE[p.role]}</span><span class="pill green">${n} учн.</span>${btn}`);
+    }).join('');
+    return `<div class="card"><h2>Дозволити реєстрацію викладача</h2>
+        <p class="muted small">Вкажіть email. Після цього людина зможе зареєструватися на сторінці входу за посиланням «Реєстрація викладача або власниці».</p>
+        <form data-form="allow" class="flex"><div class="field" style="flex:1;min-width:220px;margin:0"><input name="email" type="email" required placeholder="teacher@example.com"></div><button class="btn">Дозволити</button></form>
+        ${pending.length ? `<div style="margin-top:14px"><div class="muted small">Очікують реєстрації:</div>${pending.map(a => `<div class="row"><span>${esc(a.email)}</span><button class="btn small danger" data-act="rmallow" data-email="${esc(a.email)}">Скасувати</button></div>`).join('')}</div>` : ''}
+      </div>
+      <div class="card"><h2>Викладачі та адміністратори</h2>${rows || '<div class="empty">Поки немає викладачів. Дозвольте реєстрацію першого вище.</div>'}
+        ${me.role === 'owner' ? '<p class="muted small">Лише власниця може призначати й знімати адміністраторів. Викладача з учнями спершу треба звільнити від учнів (перенести їх іншому викладачу).</p>' : ''}</div>`;
+  },
+
+  async students() {
+    const me = S.profile, ppl = await getPeople();
+    const students = ppl.filter(p => p.role === 'student');
+    if (me.role === 'teacher') {
+      return `<div class="card"><h2>Мої учні (${students.length})</h2>${students.map(s => personRow(s, `<span class="muted small">з ${new Date(s.created_at).toLocaleDateString('uk-UA')}</span>`)).join('') || '<div class="empty">Учнів поки немає. Надішліть їм посилання з вкладки «Запрошення».</div>'}</div>`;
+    }
+    const teachers = ppl.filter(p => p.role === 'teacher');
+    const rows = students.map(s => {
+      const cur = ppl.find(p => p.id === s.teacher_id);
+      const opts = teachers.map(t => `<option value="${esc(t.id)}"${t.id === s.teacher_id ? ' selected' : ''}>${esc(fullName(t))}</option>`).join('');
+      return personRow(s, `<select>${opts}</select><button class="btn small" data-act="transfer" data-id="${esc(s.id)}">Перенести</button>`, `${s.email} · викладач: ${cur ? fullName(cur) : '—'}`);
+    }).join('');
+    return `<div class="card"><h2>Усі учні (${students.length})</h2>${rows || '<div class="empty">Учнів поки немає.</div>'}</div>`;
+  },
+
+  async invite() {
+    const code = S.profile.invite_code;
+    const link = `${location.origin}${location.pathname}#/join/${code}`;
+    return `<div class="card hero"><div class="eyebrow">Ваше персональне посилання</div><h2>Запросіть учнів</h2>
+        <div class="notice" style="word-break:break-all"><b>${esc(link)}</b></div>
+        <button class="btn" data-act="copy" data-v="${esc(link)}">Скопіювати посилання</button></div>
+      <div class="card"><p class="muted">Учень, який зареєструється за цим посиланням, автоматично закріпиться за вами. Перенести його до іншого викладача зможуть лише власниця чи адміністратор.</p></div>`;
+  },
+
+  async audit() {
+    const [ppl, log] = await Promise.all([getPeople(), sb.from('audit_log').select('*').order('created_at', { ascending: false }).limit(100)]);
+    if (log.error) throw log.error;
+    const name = id => { const p = ppl.find(x => x.id === id); return p ? fullName(p) : (id ? id.slice(0, 8) : '—'); };
+    const L = { allow_teacher_email: 'Дозволено реєстрацію викладача', remove_teacher_email: 'Скасовано дозвіл викладачу', grant_admin: 'Призначено адміністратора', revoke_admin: 'Знято роль адміністратора', transfer_student: 'Перенесено учня' };
+    const detail = r => {
+      if (r.details && r.details.email) return r.details.email;
+      if (r.action === 'transfer_student') return `${name(r.target)}: ${name(r.details.from)} → ${name(r.details.to)}`;
+      return r.target ? name(r.target) : '';
+    };
+    const rows = log.data.map(r => `<div class="row"><div><b>${esc(L[r.action] || r.action)}</b><div class="muted small">${esc(detail(r))}</div></div><div class="muted small" style="text-align:right">${esc(name(r.actor))}<br>${fmtDate(r.created_at)}</div></div>`).join('');
+    return `<div class="card"><h2>Журнал адміністративних дій</h2>${rows || '<div class="empty">Дій ще не було.</div>'}</div>`;
+  },
+
+  async profile() {
+    const me = S.profile;
+    return `<div class="card"><div class="flex" style="gap:22px;margin-bottom:18px">${avatarHtml(me, 'lg')}
+        <div><h2 style="margin:0">${esc(fullName(me))}</h2><div class="muted">${esc(me.email)}</div><div style="margin-top:8px"><span class="pill">${ROLE[me.role]}</span></div></div></div>
+        <form data-form="profile"><div class="two">
+          <div class="field"><label>Ім’я</label><input name="first" required maxlength="60" value="${esc(me.first_name)}"></div>
+          <div class="field"><label>Прізвище</label><input name="last" maxlength="60" value="${esc(me.last_name)}"></div></div>
+          <button class="btn">Зберегти ім’я</button></form></div>
+      <div class="card"><h2>Фотографія</h2>
+        <form data-form="avatar"><div class="field"><label>JPG, PNG або WEBP, до 5 МБ</label><input type="file" accept="image/jpeg,image/png,image/webp" required></div>
+          <div class="flex"><button class="btn">Завантажити фото</button>${me.avatar_path ? '<button type="button" class="btn secondary" data-act="rmavatar">Прибрати фото</button>' : ''}</div></form></div>
+      <div class="card"><h2>Налаштування облікового запису</h2>
+        <form data-form="password"><div class="field"><label>Новий пароль (щонайменше 8 символів)</label><input name="pw" type="password" required minlength="8" autocomplete="new-password"></div>
+          <button class="btn secondary">Змінити пароль</button></form>
+        <hr style="border:0;border-top:1px solid var(--line);margin:20px 0">
+        <button class="btn danger" data-act="logout">Вийти з облікового запису</button></div>`;
+  }
+};
+
+/* ===== Дії (кліки) ===== */
+const A = {
+  async logout() {
+    await sb.auth.signOut();
+    S.profile = null;
+    location.hash = '#/login';
+  },
+  async copy(el) {
+    try { await navigator.clipboard.writeText(el.dataset.v); toast('Посилання скопійовано'); }
+    catch { window.prompt('Скопіюйте посилання:', el.dataset.v); }
+  },
+  async setadmin(el) {
+    const make = el.dataset.make === '1';
+    if (!window.confirm(make ? 'Призначити цього викладача адміністратором?' : 'Зняти роль адміністратора? Користувач знову стане викладачем.')) return;
+    el.disabled = true;
+    const { error } = await sb.rpc('set_admin', { p_user: el.dataset.id, p_make_admin: make });
+    if (error) { el.disabled = false; throw error; }
+    toast(make ? 'Адміністратора призначено' : 'Роль адміністратора знято');
+    renderApp();
+  },
+  async transfer(el) {
+    const to = el.closest('.row').querySelector('select').value;
+    el.disabled = true;
+    const { error } = await sb.rpc('transfer_student', { p_student: el.dataset.id, p_new_teacher: to });
+    if (error) { el.disabled = false; throw error; }
+    toast('Учня перенесено');
+    renderApp();
+  },
+  async rmallow(el) {
+    const { error } = await sb.rpc('remove_teacher_email', { p_email: el.dataset.email });
+    if (error) throw error;
+    toast('Дозвіл скасовано');
+    renderApp();
+  },
+  async rmavatar(el) {
+    const old = S.profile.avatar_path;
+    if (!old) return;
+    el.disabled = true;
+    const { data, error } = await sb.from('profiles').update({ avatar_path: null }).eq('id', S.profile.id).select().single();
+    if (error) { el.disabled = false; throw error; }
+    S.profile = data;
+    await sb.storage.from('avatars').remove([old]);
+    avCache.delete(old);
+    toast('Фото прибрано');
+    renderApp();
+  }
+};
+
+/* ===== Форми ===== */
+const F = {
+  async login(f) {
+    const fd = new FormData(f);
+    const { error } = await sb.auth.signInWithPassword({ email: fd.get('email').trim(), password: fd.get('pw') });
+    if (error) throw error;
+    location.hash = '#/t/dashboard';
+  },
+  async register(f) {
+    const fd = new FormData(f);
+    const first = fd.get('first').trim(), last = (fd.get('last') || '').trim(), email = fd.get('email').trim();
+    const pw = fd.get('pw');
+    if (pw !== fd.get('pw2')) throw new Error('Паролі не збігаються');
+    if (pw.length < 8) throw new Error('Пароль має містити щонайменше 8 символів');
+    if (!first) throw new Error('Вкажіть ім’я');
+    const meta = { first_name: first, last_name: last };
+    if (f.dataset.code) meta.invite_code = f.dataset.code;
+    const { data, error } = await sb.auth.signUp({ email, password: pw, options: { emailRedirectTo: redirectUrl(), data: meta } });
+    if (error) throw error;
+    if (data.session) { toast('Реєстрацію завершено'); location.hash = '#/t/dashboard'; }
+    else renderMailSent(email);
+  },
+  async forgot(f) {
+    const email = new FormData(f).get('email').trim();
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl() });
+    if (error) throw error;
+    toast('Якщо такий email існує, ми надіслали лист із посиланням');
+  },
+  async recovery(f) {
+    const pw = new FormData(f).get('pw');
+    const { error } = await sb.auth.updateUser({ password: pw });
+    if (error) throw error;
+    S.recovery = false;
+    toast('Пароль змінено');
+    location.hash = '#/t/dashboard';
+    await refresh();
+  },
+  async allow(f) {
+    const email = new FormData(f).get('email').trim();
+    const { error } = await sb.rpc('allow_teacher_email', { p_email: email });
+    if (error) throw error;
+    toast('Реєстрацію дозволено для ' + email);
+    renderApp();
+  },
+  async profile(f) {
+    const fd = new FormData(f);
+    const { data, error } = await sb.from('profiles')
+      .update({ first_name: fd.get('first').trim(), last_name: (fd.get('last') || '').trim() })
+      .eq('id', S.profile.id).select().single();
+    if (error) throw error;
+    S.profile = data;
+    toast('Профіль оновлено');
+    renderApp();
+  },
+  async password(f) {
+    const pw = new FormData(f).get('pw');
+    if (pw.length < 8) throw new Error('Пароль має містити щонайменше 8 символів');
+    const { error } = await sb.auth.updateUser({ password: pw });
+    if (error) throw error;
+    f.reset();
+    toast('Пароль змінено');
+  },
+  async avatar(f) {
+    const file = f.querySelector('input[type=file]').files[0];
+    if (!file) throw new Error('Оберіть файл');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Дозволені лише JPG, PNG або WEBP');
+    if (file.size > 5 * 1024 * 1024) throw new Error('Файл більший за 5 МБ');
+    const blob = await resizeToJpeg(file);
+    const uid = S.profile.id, old = S.profile.avatar_path;
+    const path = `${uid}/avatar-${Date.now()}.jpg`;
+    const up = await sb.storage.from('avatars').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+    if (up.error) throw up.error;
+    const { data, error } = await sb.from('profiles').update({ avatar_path: path }).eq('id', uid).select().single();
+    if (error) { await sb.storage.from('avatars').remove([path]); throw error; }
+    S.profile = data;
+    if (old) { await sb.storage.from('avatars').remove([old]); avCache.delete(old); }
+    toast('Фото оновлено');
+    renderApp();
+  }
+};
+
+document.addEventListener('click', async e => {
+  const el = e.target.closest('[data-act]');
+  if (!el || !A[el.dataset.act]) return;
+  try { await A[el.dataset.act](el); } catch (err) { toast(uaErr(err), true); }
+});
+document.addEventListener('submit', async e => {
+  const f = e.target.closest('form[data-form]');
+  if (!f) return;
+  e.preventDefault();
+  const btn = f.querySelector('button:not([type=button])');
+  if (btn) btn.disabled = true;
+  try { await F[f.dataset.form](f); }
+  catch (err) { toast(uaErr(err), true); }
+  finally { if (btn && btn.isConnected) btn.disabled = false; }
+});
+
+/* ===== Запуск ===== */
+async function loadProfile() {
+  const { data, error } = await sb.from('profiles').select('*').eq('id', S.session.user.id).maybeSingle();
+  if (error) toast(uaErr(error), true);
+  S.profile = data || null;
+}
+
+async function refresh() {
+  if (S.session) {
+    if (S.recovery) return renderRecovery();
+    await loadProfile();
+    if (!S.profile) {
+      $('#app').innerHTML = authShell('<h1>Профіль не знайдено</h1><div class="notice bad">Для цього облікового запису немає профілю. Зверніться до адміністратора.</div><button class="btn secondary" data-act="logout">Вийти</button>');
+      return;
+    }
+    if (!location.hash.startsWith('#/t/')) location.hash = '#/t/dashboard';
+    renderApp();
+  } else {
+    S.profile = null;
+    if (location.hash.startsWith('#/t/')) location.hash = '#/login';
+    await renderAuth();
+  }
+}
+
+window.addEventListener('hashchange', () => {
+  if (S.session && S.profile && !S.recovery) renderApp();
+  else if (!S.session) renderAuth();
+});
+
+(async function boot() {
+  const qs = new URLSearchParams(location.search);
+  const urlErr = qs.get('error_description');
+  const { data } = await sb.auth.getSession();
+  S.session = data.session;
+  S.uid = data.session ? data.session.user.id : null;
+  if (location.search) history.replaceState(null, '', location.pathname + location.hash);
+  if (urlErr) toast('Посилання з листа недійсне або застаріло. Спробуйте ще раз.', true);
+
+  sb.auth.onAuthStateChange((ev, session) => {
+    S.session = session;
+    const uid = session ? session.user.id : null;
+    if (ev === 'PASSWORD_RECOVERY') { S.recovery = true; setTimeout(refresh, 0); }
+    else if (uid !== S.uid) { S.uid = uid; setTimeout(refresh, 0); }
+  });
+  await refresh();
+})();
+</script>
+</body>
+</html>
