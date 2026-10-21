@@ -91,74 +91,230 @@
       <div class="card"><h2>За уроками (остання спроба)</h2>${lessonsHtml}</div>${weak}`;
   };
 
-  /* ================= РОЗКЛАД ================= */
-  F.pickplan = async function (f) { S.progSid = new FormData(f).get('sid'); renderApp(); };
-  const dtfmt = iso => new Date(iso).toLocaleString('uk-UA', { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+  /* ================= РОЗКЛАД (тижневий календар) ================= */
+  const H0 = 8, H1 = 22, PX = 48;
+  const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Нд'];
+  const pad = n => String(n).padStart(2, '0');
+  const dkey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const hm = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const mondayOf = d => addDays(new Date(d.getFullYear(), d.getMonth(), d.getDate()), -((d.getDay() + 6) % 7));
+  const dm = d => d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' });
+  S.schedWeek = mondayOf(new Date());
+  S.sch = { students: [], teachers: [], names: {}, items: [] };
+
+  const css2 = document.createElement('style');
+  css2.textContent = `.sc-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.sc-bar .lbl{font-weight:700;flex:1;min-width:170px;font-size:1.05rem}
+.sc-wrap{overflow-x:auto;background:#fff;border:1px solid #e3dfed;border-radius:14px}
+.sc-grid{display:flex;min-width:760px}
+.sc-times{width:54px;flex:none}
+.sc-t{font-size:12px;color:#7b7390;text-align:right;padding:2px 6px 0 0;box-sizing:border-box;border-top:1px solid #eee}
+.sc-col{flex:1;min-width:0;border-left:1px solid #eee}
+.sc-head{height:44px;display:flex;justify-content:space-between;align-items:center;padding:0 8px;font-weight:600;box-sizing:border-box;border-bottom:1px solid #eee}
+.sc-head i{font-style:normal;font-size:12px;color:#7b7390;align-self:flex-end;padding-bottom:4px}
+.sc-col.today .sc-head{color:#2a62e0;border-bottom:3px solid #2a62e0;background:#f0f5ff}
+.sc-body{position:relative}
+.sc-cell{border-top:1px solid #eee;box-sizing:border-box}
+.sc-cell[data-act]{cursor:pointer}
+.sc-cell[data-act]:hover{background:#f3effd}
+.sc-ev{position:absolute;left:3px;right:3px;box-sizing:border-box;overflow:hidden;background:#f3d9f1;border-radius:6px;padding:4px 7px;font-size:13px;line-height:1.3;cursor:pointer;color:#3a2a55;z-index:1}
+.sc-ev.trial{background:repeating-linear-gradient(45deg,#f8e9f6,#f8e9f6 8px,#f0d0ed 8px,#f0d0ed 16px)}
+.sc-sub{font-size:12px;color:#6a5b85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#sc-ov{position:fixed;inset:0;z-index:50;background:rgba(20,15,40,.5);display:flex;align-items:center;justify-content:center;padding:12px}
+.sc-modal{background:#fff;border-radius:16px;width:min(560px,100%);max-height:92vh;overflow:auto;padding:20px}
+.sc-modal h3{margin:0 0 6px;display:flex;justify-content:space-between;align-items:center}
+.sc-modal h4{margin:16px 0 8px}
+.sc-x{border:0;background:none;font-size:26px;cursor:pointer;line-height:1}
+.sc-warn{background:#fdeeea;color:#8a3b2a;border-radius:10px;padding:10px 12px;margin:10px 0}
+.sc-sum{background:#f3effd;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:15px}`;
+  document.head.appendChild(css2);
+
+  function modal(html) {
+    closeModal();
+    const o = document.createElement('div');
+    o.id = 'sc-ov';
+    o.innerHTML = `<div class="sc-modal">${html}</div>`;
+    o.addEventListener('click', e => { if (e.target === o || (e.target.closest && e.target.closest('[data-sc-close]'))) closeModal(); });
+    document.body.appendChild(o);
+    return o.firstChild;
+  }
+  function closeModal() { const o = document.getElementById('sc-ov'); if (o) o.remove(); }
 
   TAB.schedule = async function () {
     const isT = staff();
-    const list = isT ? await students() : [];
-    const names = Object.fromEntries(list.map(s => [s.id, fullName(s)]));
-    const from = new Date(Date.now() - 3600e3).toISOString();
-    const r = await sb.from('lesson_schedule').select('*').gte('starts_at', from).order('starts_at', { ascending: true }).limit(100);
-    if (r.error) throw new Error('Не вдалося завантажити розклад (' + (r.error.message || r.error.code) + '). Перевірте, що виконано 08_schedule.sql.');
-    const items = r.data.map(l => `<div class="row"><div><b>${dtfmt(l.starts_at)}</b>${isT ? ' · ' + esc(names[l.student_id] || '') : ''}<br>${esc(l.title)}${l.note ? `<br><span class="muted small">${esc(l.note)}</span>` : ''}</div>
-      ${isT ? `<button class="btn small danger" data-act="delsched" data-id="${l.id}">Видалити</button>` : ''}</div>`).join('') || '<div class="empty">Найближчих уроків немає.</div>';
-    const opts = list.map(s => `<option value="${esc(s.id)}">${esc(fullName(s))}</option>`).join('');
+    let people = [];
+    try { people = await getPeople(); } catch (e) { /* учень може не мати доступу */ }
+    const students = people.filter(p => p.role === 'student');
+    let teachers = S.profile.role === 'teacher' ? [S.profile] : people.filter(p => p.role !== 'student');
+    if (isT && !teachers.some(t => t.id === S.profile.id)) teachers.push(S.profile);
+    const names = Object.fromEntries(people.map(p => [p.id, fullName(p)]));
+    names[S.profile.id] = names[S.profile.id] || fullName(S.profile);
+
+    const from = S.schedWeek, to = addDays(from, 7);
+    const r = await sb.from('lesson_schedule').select('*')
+      .gte('starts_at', from.toISOString()).lt('starts_at', to.toISOString()).order('starts_at', { ascending: true });
+    if (r.error) throw new Error('Не вдалося завантажити розклад (' + (r.error.message || r.error.code) + '). Перевірте, що виконано 08_schedule.sql і 09_schedule_calendar.sql.');
+    S.sch = { students, teachers, names, items: r.data };
+
+    let h0 = H0, h1 = H1;
+    r.data.forEach(l => {
+      const s = new Date(l.starts_at), e = new Date(s.getTime() + (+l.duration_min || 60) * 60000);
+      h0 = Math.min(h0, s.getHours());
+      h1 = Math.max(h1, Math.min(24, Math.ceil((e.getHours() * 60 + e.getMinutes() || 1440) / 60)));
+    });
+    const hours = []; for (let h = h0; h < h1; h++) hours.push(h);
+
+    const block = l => {
+      const s = new Date(l.starts_at), dur = +l.duration_min || 60, e = new Date(s.getTime() + dur * 60000);
+      const top = ((s.getHours() - h0) * 60 + s.getMinutes()) * PX / 60;
+      const who = isT ? (names[l.student_id] || '') : (names[l.teacher_id] || '');
+      return `<div class="sc-ev${l.is_trial ? ' trial' : ''}" data-act="schedopen" data-id="${l.id}" style="top:${top}px;height:${Math.max(dur * PX / 60 - 2, 24)}px"><b>${hm(s)}–${hm(e)}</b><div>${esc(who)}</div><div class="sc-sub">${esc(l.title)}</div></div>`;
+    };
+    const today = dkey(new Date());
+    const cols = WD.map((n, i) => {
+      const day = addDays(from, i), k = dkey(day);
+      const its = r.data.filter(l => dkey(new Date(l.starts_at)) === k);
+      const cells = hours.map(h => `<div class="sc-cell"${isT ? ` data-act="schednew" data-date="${k}" data-h="${h}"` : ''} style="height:${PX}px"></div>`).join('');
+      return `<div class="sc-col${k === today ? ' today' : ''}"><div class="sc-head"><span>${n} ${day.getDate()}</span><i>${its.length || ''}</i></div>
+        <div class="sc-body" style="height:${hours.length * PX}px">${cells}${its.map(block).join('')}</div></div>`;
+    }).join('');
+    const times = `<div class="sc-times"><div class="sc-head"></div>${hours.map(h => `<div class="sc-t" style="height:${PX}px">${pad(h)}:00</div>`).join('')}</div>`;
+
+    return `<div class="card"><div class="sc-bar">
+      <button class="btn small secondary" data-act="schedprev">‹</button>
+      <button class="btn small secondary" data-act="schedtoday">Сьогодні</button>
+      <button class="btn small secondary" data-act="schednext">›</button>
+      <span class="lbl">${dm(from)} – ${dm(addDays(from, 6))}</span>
+      ${isT ? '<button class="btn small" data-act="schednew">+ Створити урок</button>' : ''}</div>
+      <div class="sc-wrap"><div class="sc-grid">${times}${cols}</div></div>
+      ${isT ? '<p class="muted small">Натисніть на вільну клітинку, щоб створити урок на цей час, або на урок, щоб переглянути чи видалити його.</p>' : ''}</div>`;
+  };
+
+  A.schedprev = () => { S.schedWeek = addDays(S.schedWeek, -7); renderApp(); };
+  A.schednext = () => { S.schedWeek = addDays(S.schedWeek, 7); renderApp(); };
+  A.schedtoday = () => { S.schedWeek = mondayOf(new Date()); renderApp(); };
+
+  A.schednew = function (el) { openCreate(el && el.dataset ? el.dataset.date : '', el && el.dataset ? el.dataset.h : ''); };
+
+  function openCreate(date, h) {
+    const { students, teachers, names } = S.sch;
+    if (!students.length) { toast('Спершу додайте учнів', true); return; }
+    date = date || dkey(new Date());
+    const time = h !== undefined && h !== '' ? pad(h) + ':00' : '16:00';
+    const wd0 = new Date(date + 'T00:00').getDay();
     const days = [['Пн', 1], ['Вт', 2], ['Ср', 3], ['Чт', 4], ['Пт', 5], ['Сб', 6], ['Нд', 0]]
-      .map(([t, v]) => `<label class="opt" style="display:inline-flex;margin-right:12px"><input type="checkbox" name="wd" value="${v}"> ${t}</label>`).join('');
-    const add = isT ? `<div class="card"><h2>Додати уроки в розклад</h2>
-      <form data-form="addsched"><div class="field"><label>Учень</label><select name="sid">${opts}</select></div>
-      <div class="two"><div class="field"><label>Дата (перший урок)</label><input type="date" name="date" required></div>
-      <div class="field"><label>Час</label><input type="time" name="time" required></div></div>
-      <div class="field"><label>Повторювати щотижня в дні (нічого не обрано = один урок)</label><div>${days}</div></div>
-      <div class="field"><label>Скільки тижнів наперед</label><input type="number" name="weeks" min="1" max="26" value="8" style="max-width:120px"></div>
-      <div class="field"><label>Тема</label><input name="title" required maxlength="200" value="Урок математики"></div>
+      .map(([t, v]) => `<label class="opt" style="display:inline-flex;margin-right:12px"><input type="checkbox" name="wd" value="${v}"${v === wd0 ? ' checked' : ''}> ${t}</label>`).join('');
+    const m = modal(`<h3>Створити урок <button class="sc-x" data-sc-close aria-label="Закрити">×</button></h3>
+      <h4>1. Учасники</h4>
+      <label class="opt"><input type="checkbox" name="trial"> Пробний урок</label>
+      <div class="field"><label>Вчитель</label><select name="tid">${teachers.map(t => `<option value="${esc(t.id)}"${t.id === S.profile.id ? ' selected' : ''}>${esc(names[t.id] || fullName(t))}</option>`).join('')}</select></div>
+      <div class="field"><label>Студент</label><select name="sid">${students.map(s => `<option value="${esc(s.id)}">${esc(fullName(s))}</option>`).join('')}</select></div>
+      <h4>2. Дата та час</h4>
+      <div class="two"><div class="field"><label>Тривалість</label><select name="dur">${[30, 45, 60, 90, 120].map(v => `<option value="${v}"${v === 60 ? ' selected' : ''}>${v} хв</option>`).join('')}</select></div>
+      <div class="field"><label>Кількість уроків</label><input type="number" name="count" min="1" max="60" value="1"></div></div>
+      <div class="two"><div class="field"><label>Дата початку</label><input type="date" name="date" value="${date}"></div>
+      <div class="field"><label>Час початку</label><input type="time" name="time" value="${time}"></div></div>
+      <div class="field"><label>Дні тижня</label><div>${days}</div></div>
+      <div class="field"><label>Дата закінчення</label><input type="date" name="end" style="max-width:220px"></div>
+      <div class="sc-sum" id="sc-sum"></div>
+      <h4>3. Нотатка</h4>
+      <div class="field"><label>Тема</label><input name="title" maxlength="200" value="Урок математики"></div>
       <div class="field"><label>Нотатка (необов’язково)</label><input name="note" maxlength="500"></div>
-      <button class="btn">Додати в розклад</button></form></div>
-      <div class="card"><h2>Очистити розклад</h2>
-      <form data-form="clearsched" class="flex"><select name="sid" style="max-width:320px">${opts}</select>
-      <button class="btn small danger">Видалити всі майбутні уроки учня</button></form></div>` : '';
-    return `<div class="card"><h2>Найближчі уроки</h2>${items}</div>${add}`;
-  };
+      <div class="sc-warn" id="sc-warn" hidden></div>
+      <div class="flex"><button class="btn" data-sc-save>Створити</button><button class="btn secondary" data-sc-close>Скасувати</button></div>`);
+    const q = s => m.querySelector(s);
 
-  F.addsched = async function (f) {
-    const d = new FormData(f);
-    const sid = d.get('sid'), date = d.get('date'), time = d.get('time');
-    if (!sid || !date || !time) throw new Error('Оберіть учня, дату й час');
-    const weeks = Math.min(Math.max(+d.get('weeks') || 1, 1), 26);
-    const days = d.getAll('wd').map(Number);
-    const [y, m, dd] = date.split('-').map(Number), [hh, mi] = time.split(':').map(Number);
-    let dates = [];
-    if (!days.length) dates.push(new Date(y, m - 1, dd, hh, mi));
-    else for (let i = 0; i < weeks * 7; i++) {
-      const x = new Date(y, m - 1, dd + i, hh, mi);
-      if (days.includes(x.getDay())) dates.push(x);
+    function plan(ignoreEnd) {
+      const dt = q('[name=date]').value, tm = q('[name=time]').value;
+      if (!dt || !tm) return [];
+      const count = Math.min(Math.max(+q('[name=count]').value || 1, 1), 60);
+      const ds = [...m.querySelectorAll('[name=wd]:checked')].map(x => +x.value);
+      const end = ignoreEnd ? '' : q('[name=end]').value;
+      const [y, mo, d] = dt.split('-').map(Number), [hh, mi] = tm.split(':').map(Number);
+      if (!ds.length || count === 1) return [new Date(y, mo - 1, d, hh, mi)];
+      const out = [];
+      for (let i = 0; i < 400 && out.length < count; i++) {
+        const x = new Date(y, mo - 1, d + i, hh, mi);
+        if (end && dkey(x) > end) break;
+        if (ds.includes(x.getDay())) out.push(x);
+      }
+      return out;
     }
-    dates = dates.filter(x => x > new Date());
-    if (!dates.length) throw new Error('Немає майбутніх дат за цими налаштуваннями');
-    if (dates.length > 120) throw new Error('Забагато уроків за раз (максимум 120)');
-    if (dates.length > 1 && !confirm('Буде додано уроків: ' + dates.length + '. Продовжити?')) return;
-    const title = String(d.get('title')).trim(), note = String(d.get('note') || '').trim() || null;
-    const { error } = await sb.from('lesson_schedule').insert(dates.map(x => ({
-      student_id: sid, teacher_id: S.profile.id, starts_at: x.toISOString(), title, note })));
-    if (error) throw error;
-    toast('Додано уроків: ' + dates.length);
-    renderApp();
-  };
+    function refresh(ev) {
+      const t = ev && ev.target && ev.target.name;
+      if (t === 'sid') {
+        const st = students.find(s => s.id === q('[name=sid]').value);
+        if (st && st.teacher_id && teachers.some(x => x.id === st.teacher_id)) q('[name=tid]').value = st.teacher_id;
+      }
+      if (t !== 'end') { const a = plan(true); q('[name=end]').value = a.length > 1 ? dkey(a[a.length - 1]) : ''; }
+      const a = plan(false).filter(x => x > new Date());
+      q('#sc-sum').textContent = a.length
+        ? `Буде створено уроків: ${a.length} · з ${dm(a[0])} по ${dm(a[a.length - 1])}`
+        : 'Немає майбутніх дат за цими налаштуваннями';
+      q('#sc-warn').hidden = true;
+    }
+    m.addEventListener('input', refresh); m.addEventListener('change', refresh);
+    refresh();
 
-  F.clearsched = async function (f) {
-    const sid = new FormData(f).get('sid');
-    if (!sid || !confirm('Видалити ВСІ майбутні уроки цього учня з розкладу?')) return;
-    const { error } = await sb.from('lesson_schedule').delete().eq('student_id', sid).gte('starts_at', new Date().toISOString());
-    if (error) throw error;
-    toast('Майбутні уроки видалено');
-    renderApp();
-  };
-  A.delsched = async function (el) {
-    const { error } = await sb.from('lesson_schedule').delete().eq('id', el.dataset.id);
-    if (error) throw error;
-    renderApp();
+    q('[data-sc-save]').onclick = async function () {
+      const btn = this, warn = q('#sc-warn');
+      try {
+        const sid = q('[name=sid]').value, tid = q('[name=tid]').value, dur = +q('[name=dur]').value;
+        const title = q('[name=title]').value.trim();
+        const dates = plan(false).filter(x => x > new Date());
+        if (!sid || !tid) throw new Error('Оберіть вчителя й студента');
+        if (!title) throw new Error('Вкажіть тему');
+        if (!dates.length) throw new Error('Немає майбутніх дат за цими налаштуваннями');
+        btn.disabled = true;
+        const lo = new Date(Math.min(...dates) - 864e5), hi = new Date(Math.max(...dates) + 2 * 864e5);
+        const ex = await sb.from('lesson_schedule').select('starts_at,duration_min')
+          .gte('starts_at', lo.toISOString()).lt('starts_at', hi.toISOString())
+          .or(`teacher_id.eq.${tid},student_id.eq.${sid}`);
+        if (ex.error) throw ex.error;
+        const busy = x => { const a = x.getTime(), b = a + dur * 6e4;
+          return ex.data.some(e => { const s = Date.parse(e.starts_at), f = s + (+e.duration_min || 60) * 6e4; return a < f && s < b; }); };
+        const free = dates.filter(x => !busy(x)), taken = dates.filter(busy);
+        if (!free.length) { warn.textContent = 'На ці дати немає вільних слотів: у вчителя або учня вже є уроки.'; warn.hidden = false; btn.disabled = false; return; }
+        if (taken.length && !confirm(`Зайнято слотів: ${taken.length} (${taken.slice(0, 5).map(x => dm(x) + ' ' + hm(x)).join(', ')}${taken.length > 5 ? '…' : ''}).\nДодати решту (${free.length}), пропустивши зайняті?`)) { btn.disabled = false; return; }
+        const note = q('[name=note]').value.trim() || null, trial = q('[name=trial]').checked;
+        const { error } = await sb.from('lesson_schedule').insert(free.map(x => ({
+          student_id: sid, teacher_id: tid, starts_at: x.toISOString(), duration_min: dur,
+          title, note, is_trial: trial })));
+        if (error) throw error;
+        closeModal();
+        toast('Додано уроків: ' + free.length);
+        S.schedWeek = mondayOf(free[0]);
+        renderApp();
+      } catch (e) { btn.disabled = false; toast(e.message || String(e), true); }
+    };
+  }
+
+  A.schedopen = function (el) {
+    const l = S.sch.items.find(x => String(x.id) === el.dataset.id);
+    if (!l) return;
+    const s = new Date(l.starts_at), e = new Date(s.getTime() + (+l.duration_min || 60) * 6e4);
+    const n = S.sch.names, isT = staff();
+    const m = modal(`<h3>${l.is_trial ? 'Пробний урок' : 'Урок'} <button class="sc-x" data-sc-close aria-label="Закрити">×</button></h3>
+      <p><b>${s.toLocaleDateString('uk-UA', { weekday: 'long', day: 'numeric', month: 'long' })}</b><br>${hm(s)}–${hm(e)}</p>
+      <p>${esc(l.title)}</p>
+      ${n[l.student_id] ? `<p class="muted">Студент: ${esc(n[l.student_id])}</p>` : ''}
+      ${n[l.teacher_id] ? `<p class="muted">Вчитель: ${esc(n[l.teacher_id])}</p>` : ''}
+      ${l.note ? `<p class="muted" style="white-space:pre-wrap">${esc(l.note)}</p>` : ''}
+      ${isT ? `<div class="flex"><button class="btn small danger" data-sc-del>Видалити урок</button>
+        <button class="btn small danger" data-sc-delall>Видалити всі майбутні уроки учня</button></div>` : ''}`);
+    const d = m.querySelector('[data-sc-del]'), da = m.querySelector('[data-sc-delall]');
+    if (d) d.onclick = async () => {
+      const { error } = await sb.from('lesson_schedule').delete().eq('id', l.id);
+      if (error) return toast(error.message, true);
+      closeModal(); renderApp();
+    };
+    if (da) da.onclick = async () => {
+      if (!confirm('Видалити ВСІ майбутні уроки цього учня з розкладу?')) return;
+      const { error } = await sb.from('lesson_schedule').delete().eq('student_id', l.student_id).gte('starts_at', new Date().toISOString());
+      if (error) return toast(error.message, true);
+      closeModal(); toast('Майбутні уроки видалено'); renderApp();
+    };
   };
 
   if (S.profile) renderApp();
