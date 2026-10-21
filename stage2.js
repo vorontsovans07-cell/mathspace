@@ -15,7 +15,7 @@ textarea:focus{outline:2px solid #cfc4fb;border-color:var(--brand)}
   };
 })();
 /* ===== Етап 2: уроки й тести ===== */
-const QT = { single: 'Один варіант', multiple: 'Кілька варіантів', truefalse: 'Правда / неправда', short: 'Коротка відповідь', long: 'Розгорнута відповідь' };
+const QT = { single: 'Один варіант', multiple: 'Кілька варіантів', truefalse: 'Правда / неправда', short: 'Коротка відповідь', long: 'Розгорнута відповідь', matching: 'Встановлення відповідності' };
 const rt = () => location.hash.split('/'); // ['#','t','lessons', id1, id2]
 const isStaff = () => S.profile.role !== 'student';
 const must = (...rs) => rs.forEach(r => { if (r.error) throw r.error; });
@@ -36,6 +36,7 @@ async function studentList() {
 }
 
 function qInput(q) {
+  if (q.qtype === 'matching') return MSMatch.input(q.options);
   const n = 'q_' + q.id;
   if (q.qtype === 'single' || q.qtype === 'multiple')
     return (q.options || []).map((o, i) => `<label class="opt"><input type="${q.qtype === 'single' ? 'radio' : 'checkbox'}" name="${n}" value="${i}"> ${esc(o)}</label>`).join('');
@@ -102,6 +103,7 @@ async function staffLesson(sid, lid) {
     if (x.qtype === 'single' || x.qtype === 'multiple')
       ans = (x.options || []).map((o, j) => `<div class="small">${(x.qtype === 'single' ? c === j : (c || []).includes(j)) ? '✅' : '▫️'} ${j + 1}. ${esc(o)}</div>`).join('');
     else if (x.qtype === 'truefalse') ans = `<div class="small">✅ ${c ? 'Правда' : 'Неправда'}</div>`;
+    else if (x.qtype === 'matching') ans = MSMatch.describe(x.options, c);
     else if (x.qtype === 'short') ans = `<div class="small">✅ ${esc((c || []).join(' | '))}</div>`;
     else ans = '<div class="muted small">Перевіряє викладач вручну</div>';
     return `<div class="row"><div style="flex:1;min-width:240px"><div class="flex"><b>${i + 1}.</b><span class="pill">${QT[x.qtype] || x.qtype}</span><span class="pill blue">${x.points} б.</span></div><div style="white-space:pre-wrap;margin:6px 0">${esc(x.prompt)}</div>${ans}</div><button class="btn small danger" data-act="delq" data-id="${x.id}">Видалити</button></div>`;
@@ -198,7 +200,8 @@ Object.assign(F, {
     const ans = {};
     for (const q of f.querySelectorAll('[data-q]')) {
       const id = q.dataset.q, t = q.dataset.t;
-      if (t === 'multiple') ans[id] = [...q.querySelectorAll('input:checked')].map(c => Number(c.value));
+      if (t === 'matching') { ans[id] = MSMatch.collect(q); }
+      else if (t === 'multiple') ans[id] = [...q.querySelectorAll('input:checked')].map(c => Number(c.value));
       else if (t === 'single' || t === 'truefalse') {
         const c = q.querySelector('input:checked');
         if (c) ans[id] = t === 'single' ? Number(c.value) : c.value === 'true';
