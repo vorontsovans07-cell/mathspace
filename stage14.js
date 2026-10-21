@@ -31,6 +31,7 @@
   /* ---------- розбір форми завдання ---------- */
   function parseQ(f) {
     const fd = new FormData(f), t = fd.get('type'), c = String(fd.get('correct') || '').trim();
+    if (t === 'matching') { const m = MSMatch.readForm(f); return { qtype:'matching', prompt:m.prompt, options:m.options, correct:m.correct, points:m.points, explanation:m.explanation || null }; }
     let options = null, correct = null;
     if (t === 'single' || t === 'multiple') {
       options = String(fd.get('options') || '').split('\n').map(s => s.trim()).filter(Boolean);
@@ -67,13 +68,14 @@
     <div class="two"><div class="field"><label>Тип</label><select name="type">${Object.entries(QT).map(([v, t]) => `<option value="${v}"${v === (q.type || 'single') ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
     <div class="field"><label>Балів</label><input name="points" type="number" min="0.5" max="100" step="0.5" value="${Number(q.points) || 1}" required></div></div>
     <div class="field"><label>Умова (формули: $\\frac{1}{2}$)</label><textarea name="prompt" rows="3" required maxlength="4000">${esc(q.prompt || '')}</textarea></div>
-    <div class="field"><label>Варіанти (кожен з нового рядка)</label><textarea name="options" rows="3">${esc((q.options || []).join('\n'))}</textarea></div>
-    <div class="field"><label>Правильна відповідь (один варіант: номер; кілька: 1,3; правда/неправда: так або ні; коротка: відповідь | інша відповідь)</label><input name="correct" value="${esc(ai ? cstr(q) : '')}"></div>
+    <div class="field"><label>Варіанти (кожен з нового рядка)</label><textarea name="options" rows="3">${esc(Array.isArray(q.options) ? q.options.join('\n') : '')}</textarea></div>
+    <div class="field"><label>Правильна відповідь (один варіант: номер; кілька: 1,3; правда/неправда: так або ні; коротка: відповідь | інша відповідь)</label><input name="correct" value="${esc(ai && q.type !== 'matching' ? cstr(q) : '')}"></div>
     <div class="field"><label>Пояснення</label><input name="expl" maxlength="2000" value="${esc(q.explanation || '')}"></div>
     <div class="flex"><button class="btn small">${ai ? 'Додати в тест' : 'Додати завдання'}</button>${ai ? `<button type="button" class="btn small secondary" data-act="libaidrop" data-id="${q.id}">Відкинути</button>` : ''}</div></form>`;
 
   const fmtCorrect = q => {
     const c = q.correct;
+    if (q.qtype === 'matching') return MSMatch.mapping(c);
     if (q.qtype === 'single') return String(c + 1);
     if (q.qtype === 'multiple') return [].concat(c || []).map(i => i + 1).join(', ');
     if (q.qtype === 'truefalse') return c ? 'Правда' : 'Неправда';
@@ -83,6 +85,7 @@
   const fmtAns = (q, v) => {
     if (v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length)) return '— (без відповіді)';
     const o = q.options || [];
+    if (q.qtype === 'matching') return MSMatch.mapping(v);
     if (q.qtype === 'single') return o[v] !== undefined ? (v + 1) + '. ' + o[v] : String(v);
     if (q.qtype === 'multiple') return [].concat(v).map(i => o[i] !== undefined ? (i + 1) + '. ' + o[i] : String(i)).join('; ');
     if (q.qtype === 'truefalse') return v === true ? 'Правда' : 'Неправда';
@@ -119,7 +122,7 @@
     const qlist = qs.data.map((q, i) => `<div class="lib-q"><div class="flex"><b>${i + 1}.</b><span class="pill blue">${esc(QT[q.qtype] || q.qtype)}</span><span class="pill">${q.points} б.</span>
       <button class="btn small danger" data-act="libdelq" data-id="${q.id}" style="margin-left:auto">Видалити</button></div>
       <div style="white-space:pre-wrap;margin:6px 0">${esc(q.prompt)}</div>
-      ${q.options ? `<div class="muted small">${q.options.map((o, k) => (k + 1) + '. ' + esc(o)).join('<br>')}</div>` : ''}
+      ${q.qtype === 'matching' ? MSMatch.columns(q.options) : q.options ? `<div class="muted small">${q.options.map((o, k) => (k + 1) + '. ' + esc(o)).join('<br>')}</div>` : ''}
       <div class="small"><b>Правильно:</b> ${esc(fmtCorrect(q))}</div></div>`).join('') || '<div class="empty">Завдань ще немає.</div>';
 
     const ai = S.libAi && S.libAi.tid === id ? S.libAi.items : [];
@@ -134,8 +137,8 @@
     const attempts = at.data.map(a => {
       const open = S.libOpen === a.id, det = a.details || {}, ans = a.answers || {};
       const body = open ? `<div style="margin-top:10px">${qs.data.map((q, i) => {
-        const d = det[q.id], mark = q.qtype === 'long' ? '⏳' : d === true ? '✅' : '❌';
-        return `<div class="lib-q"><b>${i + 1}. ${mark}</b><div style="white-space:pre-wrap;margin:4px 0">${esc(q.prompt)}</div>
+        const d = det[q.id], mark = q.qtype === 'long' ? '⏳' : (d === true || d?.correct === true) ? '✅' : (d?.points > 0 ? '🟡' : '❌');
+        return `<div class="lib-q"><b>${i + 1}. ${mark}</b>${q.qtype === 'matching' ? `<span class="pill">${d?.points ?? 0} / ${q.points} б.</span>` : ''}<div style="white-space:pre-wrap;margin:4px 0">${esc(q.prompt)}</div>
           <div class="notice" style="white-space:pre-wrap"><b>Відповідь:</b> ${esc(fmtAns(q, ans[q.id]))}</div>
           ${q.qtype === 'long' ? '' : `<div class="muted small">Правильно: ${esc(fmtCorrect(q))}</div>`}</div>`;
       }).join('')}
@@ -341,7 +344,8 @@
     const a = {};
     root.querySelectorAll('[data-pq]').forEach(c => {
       const id = c.dataset.pq, t = c.dataset.t;
-      if (t === 'multiple') { const v = [...c.querySelectorAll('input:checked')].map(x => +x.value); if (v.length) a[id] = v; }
+      if (t === 'matching') { a[id] = MSMatch.collect(c); }
+      else if (t === 'multiple') { const v = [...c.querySelectorAll('input:checked')].map(x => +x.value); if (v.length) a[id] = v; }
       else if (t === 'single') { const x = c.querySelector('input:checked'); if (x) a[id] = +x.value; }
       else if (t === 'truefalse') { const x = c.querySelector('input:checked'); if (x) a[id] = x.value === 'true'; }
       else { const el = c.querySelector('input,textarea'); const v = el && el.value.trim(); if (v) a[id] = v; }
@@ -352,7 +356,8 @@
     root.querySelectorAll('[data-pq]').forEach(c => {
       const id = c.dataset.pq, t = c.dataset.t, v = a[id];
       if (v === undefined) return;
-      if (t === 'multiple') c.querySelectorAll('input').forEach(x => { x.checked = v.includes(+x.value); });
+      if (t === 'matching') MSMatch.restore(c, v);
+      else if (t === 'multiple') c.querySelectorAll('input').forEach(x => { x.checked = v.includes(+x.value); });
       else if (t === 'single') c.querySelectorAll('input').forEach(x => { x.checked = +x.value === v; });
       else if (t === 'truefalse') c.querySelectorAll('input').forEach(x => { x.checked = (x.value === 'true') === v; });
       else { const el = c.querySelector('input,textarea'); if (el) el.value = v; }
@@ -363,7 +368,8 @@
     const qhtml = (q, i) => {
       const o = q.options || [];
       let inp;
-      if (q.qtype === 'single') inp = o.map((x, k) => `<label class="opt"><input type="radio" name="pq_${q.id}" value="${k}"> <span>${esc(x)}</span></label>`).join('');
+      if (q.qtype === 'matching') inp = MSMatch.input(q.options);
+      else if (q.qtype === 'single') inp = o.map((x, k) => `<label class="opt"><input type="radio" name="pq_${q.id}" value="${k}"> <span>${esc(x)}</span></label>`).join('');
       else if (q.qtype === 'multiple') inp = o.map((x, k) => `<label class="opt"><input type="checkbox" value="${k}"> <span>${esc(x)}</span></label>`).join('');
       else if (q.qtype === 'truefalse') inp = `<label class="opt"><input type="radio" name="pq_${q.id}" value="true"> <span>Правда</span></label><label class="opt"><input type="radio" name="pq_${q.id}" value="false"> <span>Неправда</span></label>`;
       else if (q.qtype === 'short') inp = '<input type="text" maxlength="500" placeholder="Ваша відповідь">';
@@ -437,8 +443,8 @@
     if (r.error) { root.innerHTML = shell(`<div class="card"><h2>Спроба недоступна</h2><p>${esc(r.error.message)}</p></div>`); return; }
     const d = r.data, L = attLink(id);
     const cards = d.questions.map((q, i) => {
-      const mark = q.qtype === 'long' ? '📝' : q.ok === true ? '✅' : '❌';
-      return `<div class="card"><div class="flex"><b>${i + 1}. ${mark}</b><span class="pill">${q.points} б.</span></div>
+      const mark = q.qtype === 'long' ? '📝' : (q.ok === true || q.ok?.correct === true) ? '✅' : (q.ok?.points > 0 ? '🟡' : '❌');
+      return `<div class="card"><div class="flex"><b>${i + 1}. ${mark}</b><span class="pill">${q.qtype === 'matching' ? `${q.ok?.points ?? 0} / ` : ''}${q.points} б.</span></div>
         <p style="white-space:pre-wrap;font-size:1.1rem">${esc(q.prompt)}</p>
         <div class="notice" style="white-space:pre-wrap"><b>Моя відповідь:</b> ${esc(fmtAns(q, q.answer))}</div>
         ${d.show_answers && q.qtype !== 'long' && q.correct !== null && q.correct !== undefined ? `<div class="muted small"><b>Правильна відповідь:</b> ${esc(fmtCorrect(q))}</div>` : ''}
