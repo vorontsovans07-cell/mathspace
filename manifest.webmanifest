@@ -1,0 +1,16 @@
+{
+  "id": "/mathspace/",
+  "name": "MathSpace — уроки та домашні завдання",
+  "short_name": "MathSpace",
+  "description": "Платформа навчання математики",
+  "start_url": "/mathspace/#/login",
+  "scope": "/mathspace/",
+  "display": "standalone",
+  "background_color": "#faf8ff",
+  "theme_color": "#6246cc",
+  "lang": "uk",
+  "icons": [
+    {"src": "mathspace-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "mathspace-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}
