@@ -66,6 +66,74 @@
     rows.forEach(a => { const o = byL[a.lesson_id] = byL[a.lesson_id] || { best: 0, last: 0 }; const v = pct(+a.auto_score + +a.manual_score, a.max_score); o.best = Math.max(o.best, v); o.last = v; });
     const lessonsHtml = Object.entries(byL).sort((a, b) => a[1].last - b[1].last).map(([id, o]) =>
       `<div class="row"><span style="flex:1.3">${esc(title[id] || 'Урок')}</span><div class="bar${o.last >= 70 ? ' ok' : ''}"><i style="width:${o.last}%"></i></div><b>${o.last}%</b></div>`).join('');
+/* MathSpace · етап 12: вкладки «Прогрес» і «Розклад».
+   Підключається ПІСЛЯ stage11.js. Спершу виконайте 08_schedule.sql */
+(function () {
+  'use strict';
+  S.progSid = null;
+
+  const st = document.createElement('style');
+  st.textContent = `.bar{height:10px;border-radius:5px;background:#ece8f7;overflow:hidden;flex:1;min-width:80px}
+.bar i{display:block;height:100%;background:#e0566b}
+.bar.ok i{background:#2e9e5b}`;
+  document.head.appendChild(st);
+
+  const base = tabs;
+  window.tabs = function () {
+    const t = base();
+    const i = t.findIndex(x => x[0] === 'profile');
+    [['progress', 'Прогрес', '📊'], ['schedule', 'Розклад', '📅']].forEach(x => {
+      if (!t.some(y => y[0] === x[0])) t.splice(i < 0 ? t.length : i, 0, x);
+    });
+    return t;
+  };
+
+  const pct = (s, m) => (+m > 0 ? Math.round(100 * s / m) : 0);
+  const staff = () => S.profile.role !== 'student';
+
+  async function students() {
+    return (await getPeople()).filter(p => p.role === 'student');
+  }
+  function picker(list, cur, formName) {
+    return `<form data-form="${formName}" class="flex" style="margin-bottom:14px">
+      <select name="sid" style="max-width:320px">${list.map(s => `<option value="${esc(s.id)}"${s.id === cur ? ' selected' : ''}>${esc(fullName(s))}</option>`).join('')}</select>
+      <button class="btn small secondary">Показати</button></form>`;
+  }
+  F.pickprog = async function (f) { S.progSid = new FormData(f).get('sid'); renderApp(); };
+
+  /* ================= ПРОГРЕС ================= */
+  TAB.progress = async function () {
+    let sid = S.profile.id, head = '';
+    if (staff()) {
+      const list = await students();
+      if (!list.length) return '<div class="card"><div class="empty">Учнів поки немає.</div></div>';
+      if (!list.some(s => s.id === S.progSid)) S.progSid = list[0].id;
+      sid = S.progSid;
+      head = picker(list, sid, 'pickprog');
+    }
+    const ls = await sb.from('lessons').select('id,title,lesson_no').eq('student_id', sid);
+    must(ls);
+    const title = Object.fromEntries(ls.data.map(l => [l.id, (l.lesson_no ? '№' + l.lesson_no + '. ' : '') + l.title]));
+    const ids = ls.data.map(l => l.id);
+    const at = ids.length ? await sb.from('attempts')
+      .select('id,lesson_id,created_at,status,auto_score,manual_score,max_score')
+      .in('lesson_id', ids).eq('status', 'graded').order('created_at', { ascending: true }) : { data: [] };
+    must(at);
+    const rows = at.data.filter(a => +a.max_score > 0);
+    if (!rows.length) return `<div class="card"><h2>Прогрес</h2>${head}<div class="empty">Перевірених спроб поки немає.</div></div>`;
+
+    const p = rows.map(a => pct(+a.auto_score + +a.manual_score, a.max_score));
+    const avg = Math.round(p.reduce((a, b) => a + b, 0) / p.length);
+    const W = 560, H = 150, n = p.length;
+    const X = i => (n === 1 ? W / 2 : 14 + i * (W - 28) / (n - 1));
+    const Y = v => H - 12 - v * (H - 24) / 100;
+    const line = p.map((v, i) => `${X(i)},${Y(v)}`).join(' ');
+    const dots = p.map((v, i) => `<circle cx="${X(i)}" cy="${Y(v)}" r="4" fill="#6d4aff"><title>${fmtDate(rows[i].created_at)}: ${v}%</title></circle>`).join('');
+
+    const byL = {};
+    rows.forEach(a => { const o = byL[a.lesson_id] = byL[a.lesson_id] || { best: 0, last: 0 }; const v = pct(+a.auto_score + +a.manual_score, a.max_score); o.best = Math.max(o.best, v); o.last = v; });
+    const lessonsHtml = Object.entries(byL).sort((a, b) => a[1].last - b[1].last).map(([id, o]) =>
+      `<div class="row"><span style="flex:1.3">${esc(title[id] || 'Урок')}</span><div class="bar${o.last >= 70 ? ' ok' : ''}"><i style="width:${o.last}%"></i></div><b>${o.last}%</b></div>`).join('');
 
     let weak = '';
     if (staff()) {
@@ -100,6 +168,7 @@
   const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
   const mondayOf = d => addDays(new Date(d.getFullYear(), d.getMonth(), d.getDate()), -((d.getDay() + 6) % 7));
   const dm = d => d.toLocaleDateString('uk-UA', { day: 'numeric', month: 'long' });
+  const CX = { cancelled_teacher: 'Скасовано викладачем', cancelled_student: 'Скасовано учнем' };
   S.schedWeek = mondayOf(new Date());
   S.sch = { students: [], teachers: [], names: {}, items: [] };
 
@@ -127,7 +196,15 @@
 .sc-modal h4{margin:16px 0 8px}
 .sc-x{border:0;background:none;font-size:26px;cursor:pointer;line-height:1}
 .sc-warn{background:#fdeeea;color:#8a3b2a;border-radius:10px;padding:10px 12px;margin:10px 0}
-.sc-sum{background:#f3effd;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:15px}`;
+.sc-sum{background:#f3effd;border-radius:10px;padding:10px 12px;margin:10px 0;font-size:15px}
+.sc-ev{user-select:none;-webkit-user-select:none}
+.sc-ev[data-drag]{cursor:grab}
+body.sc-dragging,body.sc-dragging .sc-ev{cursor:grabbing!important}
+.sc-dim{opacity:.35}
+.sc-drop{background:#cfe0ff!important;border:2px dashed #2a62e0;color:#1d3f8f;pointer-events:none;z-index:5;font-weight:600}
+.sc-ev.cx{background:#ececf1;color:#7b7390}
+.sc-ev.cx b{text-decoration:line-through}
+.sc-cx{font-size:12px;font-weight:600;color:#a23b4c}`;
   document.head.appendChild(css2);
 
   function modal(html) {
@@ -169,15 +246,16 @@
       const s = new Date(l.starts_at), dur = +l.duration_min || 60, e = new Date(s.getTime() + dur * 60000);
       const top = ((s.getHours() - h0) * 60 + s.getMinutes()) * PX / 60;
       const who = isT ? (names[l.student_id] || '') : (names[l.teacher_id] || '');
-      return `<div class="sc-ev${l.is_trial ? ' trial' : ''}" data-act="schedopen" data-id="${l.id}" style="top:${top}px;height:${Math.max(dur * PX / 60 - 2, 24)}px"><b>${hm(s)}–${hm(e)}</b><div>${esc(who)}</div><div class="sc-sub">${esc(l.title)}</div></div>`;
+      const cxl = CX[l.status] || '', planned = !cxl;
+      return `<div class="sc-ev${l.is_trial ? ' trial' : ''}${cxl ? ' cx' : ''}" data-act="schedopen" data-id="${l.id}"${isT && planned ? ' data-drag="1"' : ''} style="top:${top}px;height:${Math.max(dur * PX / 60 - 2, 24)}px"><b>${hm(s)}–${hm(e)}</b>${cxl ? `<div class="sc-cx">${cxl}</div>` : ''}<div>${esc(who)}</div><div class="sc-sub">${esc(l.title)}</div></div>`;
     };
     const today = dkey(new Date());
     const cols = WD.map((n, i) => {
       const day = addDays(from, i), k = dkey(day);
       const its = r.data.filter(l => dkey(new Date(l.starts_at)) === k);
       const cells = hours.map(h => `<div class="sc-cell"${isT ? ` data-act="schednew" data-date="${k}" data-h="${h}"` : ''} style="height:${PX}px"></div>`).join('');
-      return `<div class="sc-col${k === today ? ' today' : ''}"><div class="sc-head"><span>${n} ${day.getDate()}</span><i>${its.length || ''}</i></div>
-        <div class="sc-body" style="height:${hours.length * PX}px">${cells}${its.map(block).join('')}</div></div>`;
+      return `<div class="sc-col${k === today ? ' today' : ''}"><div class="sc-head"><span>${n} ${day.getDate()}</span><i>${its.filter(l => !CX[l.status]).length || ''}</i></div>
+        <div class="sc-body" data-day="${k}" style="height:${hours.length * PX}px">${cells}${its.map(block).join('')}</div></div>`;
     }).join('');
     const times = `<div class="sc-times"><div class="sc-head"></div>${hours.map(h => `<div class="sc-t" style="height:${PX}px">${pad(h)}:00</div>`).join('')}</div>`;
 
@@ -187,7 +265,7 @@
       <button class="btn small secondary" data-act="schednext">›</button>
       <span class="lbl">${dm(from)} – ${dm(addDays(from, 6))}</span>
       ${isT ? '<button class="btn small" data-act="schednew">+ Створити урок</button>' : ''}</div>
-      <div class="sc-wrap"><div class="sc-grid">${times}${cols}</div></div>
+      <div class="sc-wrap"><div class="sc-grid" data-h0="${h0}">${times}${cols}</div></div>
       ${isT ? '<p class="muted small">Натисніть на вільну клітинку, щоб створити урок на цей час, або на урок, щоб переглянути чи видалити його.</p>' : ''}</div>`;
   };
 
@@ -268,12 +346,12 @@
         if (!dates.length) throw new Error('Немає майбутніх дат за цими налаштуваннями');
         btn.disabled = true;
         const lo = new Date(Math.min(...dates) - 864e5), hi = new Date(Math.max(...dates) + 2 * 864e5);
-        const ex = await sb.from('lesson_schedule').select('starts_at,duration_min')
+        const ex = await sb.from('lesson_schedule').select('starts_at,duration_min,status')
           .gte('starts_at', lo.toISOString()).lt('starts_at', hi.toISOString())
           .or(`teacher_id.eq.${tid},student_id.eq.${sid}`);
         if (ex.error) throw ex.error;
         const busy = x => { const a = x.getTime(), b = a + dur * 6e4;
-          return ex.data.some(e => { const s = Date.parse(e.starts_at), f = s + (+e.duration_min || 60) * 6e4; return a < f && s < b; }); };
+          return ex.data.some(e => { if (CX[e.status]) return false; const s = Date.parse(e.starts_at), f = s + (+e.duration_min || 60) * 6e4; return a < f && s < b; }); };
         const free = dates.filter(x => !busy(x)), taken = dates.filter(busy);
         if (!free.length) { warn.textContent = 'На ці дати немає вільних слотів: у вчителя або учня вже є уроки.'; warn.hidden = false; btn.disabled = false; return; }
         if (taken.length && !confirm(`Зайнято слотів: ${taken.length} (${taken.slice(0, 5).map(x => dm(x) + ' ' + hm(x)).join(', ')}${taken.length > 5 ? '…' : ''}).\nДодати решту (${free.length}), пропустивши зайняті?`)) { btn.disabled = false; return; }
@@ -290,32 +368,137 @@
     };
   }
 
+  const fmtMin = m => pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+
+  async function moveLesson(l, newStart) {
+    const dur = +l.duration_min || 60, a = newStart.getTime(), b = a + dur * 6e4;
+    const parts = [`student_id.eq.${l.student_id}`];
+    if (l.teacher_id) parts.push(`teacher_id.eq.${l.teacher_id}`);
+    const ex = await sb.from('lesson_schedule').select('id,starts_at,duration_min,status')
+      .gte('starts_at', new Date(a - 864e5).toISOString()).lt('starts_at', new Date(a + 2 * 864e5).toISOString())
+      .or(parts.join(','));
+    if (ex.error) throw ex.error;
+    const clash = ex.data.some(e => {
+      if (e.id === l.id || CX[e.status]) return false;
+      const s = Date.parse(e.starts_at), f = s + (+e.duration_min || 60) * 6e4;
+      return a < f && s < b;
+    });
+    if (clash) { toast('На цей час уже є інший урок: вільного слота немає', true); return false; }
+    const { error } = await sb.from('lesson_schedule').update({ starts_at: newStart.toISOString() }).eq('id', l.id);
+    if (error) throw error;
+    toast('Урок перенесено на ' + dm(newStart) + ', ' + hm(newStart));
+    renderApp();
+    return true;
+  }
+
   A.schedopen = function (el) {
     const l = S.sch.items.find(x => String(x.id) === el.dataset.id);
     if (!l) return;
     const s = new Date(l.starts_at), e = new Date(s.getTime() + (+l.duration_min || 60) * 6e4);
-    const n = S.sch.names, isT = staff();
+    const n = S.sch.names, isT = staff(), cxl = CX[l.status];
     const m = modal(`<h3>${l.is_trial ? 'Пробний урок' : 'Урок'} <button class="sc-x" data-sc-close aria-label="Закрити">×</button></h3>
+      ${cxl ? `<div class="sc-warn">❌ ${cxl}</div>` : ''}
       <p><b>${s.toLocaleDateString('uk-UA', { weekday: 'long', day: 'numeric', month: 'long' })}</b><br>${hm(s)}–${hm(e)}</p>
       <p>${esc(l.title)}</p>
       ${n[l.student_id] ? `<p class="muted">Студент: ${esc(n[l.student_id])}</p>` : ''}
       ${n[l.teacher_id] ? `<p class="muted">Вчитель: ${esc(n[l.teacher_id])}</p>` : ''}
       ${l.note ? `<p class="muted" style="white-space:pre-wrap">${esc(l.note)}</p>` : ''}
-      ${isT ? `<div class="flex"><button class="btn small danger" data-sc-del>Видалити урок</button>
+      ${isT && !cxl ? `<h4>Скасувати урок</h4><div class="flex">
+        <button class="btn small secondary" data-sc-cxt>Скасовано викладачем</button>
+        <button class="btn small secondary" data-sc-cxs>Скасовано учнем</button></div>
+        <h4>Перенести</h4><div class="flex"><input type="date" id="sc-mv-d" value="${dkey(s)}"><input type="time" id="sc-mv-t" value="${hm(s)}">
+        <button class="btn small" data-sc-mv>Перенести</button></div>
+        <p class="muted small">Урок також можна перетягнути мишею в календарі.</p>` : ''}
+      ${isT && cxl ? '<div class="flex"><button class="btn small" data-sc-restore>Відновити урок</button></div>' : ''}
+      ${isT ? `<h4>Видалити</h4><div class="flex"><button class="btn small danger" data-sc-del>Видалити урок</button>
         <button class="btn small danger" data-sc-delall>Видалити всі майбутні уроки учня</button></div>` : ''}`);
-    const d = m.querySelector('[data-sc-del]'), da = m.querySelector('[data-sc-delall]');
-    if (d) d.onclick = async () => {
+    const $ = x => m.querySelector(x);
+    const setStatus = async st => {
+      const { error } = await sb.from('lesson_schedule').update({ status: st }).eq('id', l.id);
+      if (error) return toast(error.message, true);
+      closeModal(); toast(st === 'planned' ? 'Урок відновлено' : 'Урок скасовано'); renderApp();
+    };
+    if ($('[data-sc-cxt]')) $('[data-sc-cxt]').onclick = () => setStatus('cancelled_teacher');
+    if ($('[data-sc-cxs]')) $('[data-sc-cxs]').onclick = () => setStatus('cancelled_student');
+    if ($('[data-sc-restore]')) $('[data-sc-restore]').onclick = () => setStatus('planned');
+    if ($('[data-sc-mv]')) $('[data-sc-mv]').onclick = async () => {
+      const d = $('#sc-mv-d').value, t = $('#sc-mv-t').value;
+      if (!d || !t) return toast('Вкажіть дату й час', true);
+      const [y, mo, dd] = d.split('-').map(Number), [hh, mi] = t.split(':').map(Number);
+      try { if (await moveLesson(l, new Date(y, mo - 1, dd, hh, mi))) closeModal(); }
+      catch (err) { toast(err.message || String(err), true); }
+    };
+    if ($('[data-sc-del]')) $('[data-sc-del]').onclick = async () => {
       const { error } = await sb.from('lesson_schedule').delete().eq('id', l.id);
       if (error) return toast(error.message, true);
       closeModal(); renderApp();
     };
-    if (da) da.onclick = async () => {
+    if ($('[data-sc-delall]')) $('[data-sc-delall]').onclick = async () => {
       if (!confirm('Видалити ВСІ майбутні уроки цього учня з розкладу?')) return;
       const { error } = await sb.from('lesson_schedule').delete().eq('student_id', l.student_id).gte('starts_at', new Date().toISOString());
       if (error) return toast(error.message, true);
       closeModal(); toast('Майбутні уроки видалено'); renderApp();
     };
   };
+
+  /* ---------- перетягування уроків мишею ---------- */
+  let suppressClick = false;
+  window.addEventListener('click', ev => {
+    if (suppressClick) { ev.stopPropagation(); ev.preventDefault(); }
+  }, true);
+
+  document.addEventListener('pointerdown', ev => {
+    if (ev.pointerType === 'touch' || ev.button !== 0) return;
+    const el = ev.target.closest && ev.target.closest('.sc-ev[data-drag]');
+    if (!el) return;
+    const l = S.sch.items.find(x => String(x.id) === el.dataset.id);
+    if (!l) return;
+    const dur = +l.duration_min || 60, sx = ev.clientX, sy = ev.clientY;
+    const grab = ev.clientY - el.getBoundingClientRect().top;
+    const prev = document.createElement('div');
+    prev.className = 'sc-ev sc-drop';
+    let dragging = false, target = null;
+
+    const mv = e => {
+      if (!dragging) {
+        if (Math.hypot(e.clientX - sx, e.clientY - sy) < 6) return;
+        dragging = true; el.classList.add('sc-dim'); document.body.classList.add('sc-dragging');
+      }
+      e.preventDefault();
+      const body = [...document.querySelectorAll('.sc-body')].find(b => {
+        const r = b.getBoundingClientRect(); return e.clientX >= r.left && e.clientX < r.right;
+      });
+      if (!body) { target = null; prev.remove(); return; }
+      const r = body.getBoundingClientRect(), h0 = +body.closest('.sc-grid').dataset.h0;
+      let min = Math.round((h0 * 60 + ((e.clientY - r.top - grab) / PX) * 60) / 15) * 15;
+      min = Math.max(h0 * 60, Math.min(min, h0 * 60 + (r.height / PX) * 60 - dur));
+      target = { day: body.dataset.day, min };
+      if (prev.parentNode !== body) body.appendChild(prev);
+      prev.style.top = ((min - h0 * 60) * PX / 60) + 'px';
+      prev.style.height = Math.max(dur * PX / 60 - 2, 24) + 'px';
+      prev.textContent = fmtMin(min) + '–' + fmtMin(min + dur);
+    };
+    const stop = () => {
+      window.removeEventListener('pointermove', mv);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', stop);
+      prev.remove(); el.classList.remove('sc-dim'); document.body.classList.remove('sc-dragging');
+    };
+    const up = async () => {
+      const was = dragging, t = target;
+      stop();
+      if (!was) return;
+      suppressClick = true; setTimeout(() => { suppressClick = false; }, 80);
+      if (!t) return;
+      const [y, mo, d] = t.day.split('-').map(Number);
+      const nd = new Date(y, mo - 1, d, Math.floor(t.min / 60), t.min % 60);
+      if (nd.getTime() === new Date(l.starts_at).getTime()) return;
+      try { await moveLesson(l, nd); } catch (err) { toast(err.message || String(err), true); }
+    };
+    window.addEventListener('pointermove', mv);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', stop);
+  });
 
   if (S.profile) renderApp();
 })();
