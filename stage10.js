@@ -109,6 +109,7 @@
 
   function getVal(card) {
     const t = card.dataset.t;
+    if (t === 'matching') return MSMatch.collect(card);
     if (t === 'multiple') return [...card.querySelectorAll('input:checked')].map(c => c.value);
     if (t === 'single' || t === 'truefalse') { const c = card.querySelector('input:checked'); return c ? c.value : null; }
     const el = card.querySelector('input,textarea');
@@ -116,6 +117,7 @@
   }
   function setVal(card, v) {
     const t = card.dataset.t;
+    if (t === 'matching') { MSMatch.restore(card, v); return; }
     if (t === 'multiple') card.querySelectorAll('input').forEach(c => { c.checked = [].concat(v || []).includes(c.value); });
     else if (t === 'single' || t === 'truefalse') card.querySelectorAll('input').forEach(c => { c.checked = (c.value === v); });
     else { const el = card.querySelector('input,textarea'); if (el && v) el.value = v; }
