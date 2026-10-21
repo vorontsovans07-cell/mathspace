@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 // PASTE YOUR PUBLIC VAPID KEY BETWEEN QUOTES. It is safe to publish this one.
-const VAPID_PUBLIC_KEY = 'REPLACE_WITH_VAPID_PUBLIC_KEY';
+const VAPID_PUBLIC_KEY = 'EjA0OLWNRlVJ47dWxpsbLkjHfRbqnz1T7iaP8CfWg2E';
 const css=document.createElement('style');css.textContent='.ms-push-control{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}.ms-push-control button{border:1px solid #d7cced;border-radius:10px;padding:9px 12px;background:#eee8ff;color:#4d339d;cursor:pointer}.ms-push-status{font-size:12px;color:#5a5571}.ms-push-error{color:#a43451}';document.head.appendChild(css);
 const b64urlToUint8=s=>{const padding='='.repeat((4-s.length%4)%4);const raw=atob((s+padding).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(raw,c=>c.charCodeAt(0));};
 let pending=false,lastUser='';
