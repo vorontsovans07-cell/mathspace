@@ -25,8 +25,8 @@
     <div class="two"><div class="field"><label>Тип</label><select name="type">${Object.entries(QT).map(([v, t]) => `<option value="${v}"${v === q.type ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
     <div class="field"><label>Балів</label><input name="points" type="number" min="0.5" max="100" step="0.5" value="${Number(q.points) || 1}" required></div></div>
     <div class="field"><label>Умова</label><textarea name="prompt" rows="3" required maxlength="4000">${esc(q.prompt)}</textarea></div>
-    <div class="field"><label>Варіанти (кожен з нового рядка)</label><textarea name="options" rows="3">${esc((q.options || []).join('\n'))}</textarea></div>
-    <div class="field"><label>Правильна відповідь</label><input name="correct" value="${esc(cstr(q))}"></div>
+    <div class="field"><label>Варіанти (кожен з нового рядка)</label><textarea name="options" rows="3">${esc(Array.isArray(q.options) ? q.options.join('\n') : '')}</textarea></div>
+    <div class="field"><label>Правильна відповідь</label><input name="correct" value="${esc(q.type === 'matching' ? '' : cstr(q))}"></div>
     <div class="field"><label>Пояснення</label><input name="expl" maxlength="2000" value="${esc(q.explanation || '')}"></div>
     <div class="flex"><button class="btn small">Додати в тест</button><button type="button" class="btn small secondary" data-act="aidrop" data-id="${q.id}">Відкинути</button></div></form>`;
 
