@@ -139,7 +139,10 @@
           <div class="notice" style="white-space:pre-wrap"><b>Відповідь:</b> ${esc(fmtAns(q, ans[q.id]))}</div>
           ${q.qtype === 'long' ? '' : `<div class="muted small">Правильно: ${esc(fmtCorrect(q))}</div>`}</div>`;
       }).join('')}
-        ${maxManual ? `<form data-form="libgrade" data-id="${a.id}" class="flex" style="margin-top:10px"><input name="pts" type="number" min="0" max="${maxManual}" step="0.5" required value="${a.manual_score}" style="max-width:200px"><span class="muted small">балів за розгорнуті (макс. ${maxManual})</span><button class="btn small">Зберегти оцінку</button></form>` : ''}
+        <form data-form="libgrade" data-id="${a.id}"${maxManual ? ' data-man="1"' : ''} style="margin-top:10px">
+          ${maxManual ? `<div class="flex"><input name="pts" type="number" min="0" max="${maxManual}" step="0.5" required value="${a.manual_score}" style="max-width:200px"><span class="muted small">балів за розгорнуті (макс. ${maxManual})</span></div>` : ''}
+          <div class="field" style="margin-top:8px"><label>Коментар для учня (необов’язково)</label><textarea name="comment" rows="2" maxlength="2000">${esc(a.teacher_comment || '')}</textarea></div>
+          <button class="btn small">Зберегти ${maxManual ? 'оцінку й коментар' : 'коментар'}</button></form>
         <button class="btn small danger" data-act="libdelatt" data-id="${a.id}" style="margin-top:10px">Видалити спробу</button></div>` : '';
       return `<div class="row" style="display:block"><div class="row" style="border:0;padding:0"><span><b>${esc(a.guest_name)}</b> <span class="muted small">${fmtDate(a.finished_at)}</span></span>
         <div class="end"><span class="pill ${a.status === 'graded' ? 'green' : 'amber'}">${+a.auto_score + +a.manual_score} / ${a.max_score}${a.status === 'graded' ? '' : ' · чекає перевірки'}</span>
@@ -157,6 +160,7 @@
           <div class="field"><label>Опис для учня (необов’язково)</label><textarea name="desc" rows="2" maxlength="2000">${esc(T.description || '')}</textarea></div>
           <div class="two"><div class="field"><label>Час на тест, хв (порожньо — без обмеження)</label><input name="min" type="number" min="1" max="600" value="${T.time_limit_minutes ?? ''}"></div>
           <div class="field"><label class="opt"><input type="checkbox" name="active"${T.is_active ? ' checked' : ''}> Посилання працює</label></div></div>
+          <div class="field"><label class="opt"><input type="checkbox" name="show"${T.show_answers ? ' checked' : ''}> Показувати учню правильні відповіді й пояснення після здачі</label></div>
           <div class="flex"><button class="btn secondary">Зберегти</button><button type="button" class="btn danger" data-act="libdel" data-id="${id}">Видалити тест</button></div></form></div>
       <div class="card"><h2>Завдання (${qs.data.length})</h2>${qlist}</div>
       <div class="card"><h2>Додати завдання</h2>${qForm({}, id, false)}</div>
@@ -183,7 +187,7 @@
     const fd = new FormData(f), m = fd.get('min');
     const { error } = await sb.from('library_tests').update({
       title: String(fd.get('title')).trim(), description: String(fd.get('desc') || '').trim() || null,
-      time_limit_minutes: m ? Number(m) : null, is_active: fd.get('active') === 'on' }).eq('id', f.dataset.id);
+      time_limit_minutes: m ? Number(m) : null, is_active: fd.get('active') === 'on', show_answers: fd.get('show') === 'on' }).eq('id', f.dataset.id);
     if (error) throw error;
     toast('Збережено'); renderApp();
   };
@@ -268,10 +272,12 @@
 
   A.libview = function (el) { S.libOpen = S.libOpen === el.dataset.id ? null : el.dataset.id; renderApp(); };
   F.libgrade = async function (f) {
-    const { error } = await sb.from('library_attempts')
-      .update({ manual_score: Number(new FormData(f).get('pts')) || 0, status: 'graded' }).eq('id', f.dataset.id);
+    const fd = new FormData(f);
+    const u = { teacher_comment: String(fd.get('comment') || '').trim() || null };
+    if (f.dataset.man) { u.manual_score = Number(fd.get('pts')) || 0; u.status = 'graded'; }
+    const { error } = await sb.from('library_attempts').update(u).eq('id', f.dataset.id);
     if (error) throw error;
-    toast('Оцінку збережено'); renderApp();
+    toast('Збережено'); renderApp();
   };
   A.libdelatt = async function (el) {
     if (!confirm('Видалити цю спробу?')) return;
@@ -282,7 +288,8 @@
 
   /* =============== ПУБЛІЧНА СТОРІНКА ТЕСТУ (без входу) =============== */
   const PUBRE = /^#\/test\/([A-Za-z0-9]{16,64})\/?$/;
-  let token = null, test = null, root = null, timerId = null, busy = false;
+  const ATTRE = /^#\/attempt\/([0-9a-fA-F-]{36})\/?$/;
+  let token = null, attId = null, test = null, root = null, timerId = null, busy = false;
   const KEY = () => 'ms_pub_' + token;
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY()) || 'null'); } catch (e) { return null; } };
   const save = o => { try { localStorage.setItem(KEY(), JSON.stringify(o)); } catch (e) { /* ігноруємо */ } };
@@ -403,14 +410,53 @@
     }
     wipe();
     if (timerId) { clearInterval(timerId); timerId = null; }
-    const d = r.data;
+    showDone(st, r.data);
+  }
+
+  const attLink = id => location.origin + location.pathname + '#/attempt/' + id;
+  async function copyLink(l) {
+    try { await navigator.clipboard.writeText(l); toast('Посилання скопійовано'); }
+    catch (e) { window.prompt('Скопіюйте посилання (Ctrl+C):', l); }
+  }
+
+  function showDone(st, d) {
+    const L = attLink(st.aid);
     root.innerHTML = shell(`<div class="card"><h2>Дякуємо, ${esc(st.name || '')}!</h2>
       <p style="font-size:1.2rem">Ваш результат: <b>${d.auto_score} з ${d.max_score}</b> балів.</p>
       ${d.status === 'review' ? '<p class="muted">Розгорнуті відповіді перевірить викладач, остаточна оцінка може бути вищою.</p>' : ''}
-      <p class="muted small">Тепер цю сторінку можна закрити.</p></div>`);
+      <div class="flex"><button class="btn" id="pub-review">Переглянути мою спробу</button></div>
+      <p class="muted small">Збережіть це посилання, щоб повернутися до своєї спроби пізніше (там з’явиться й оцінка викладача):</p>
+      <div class="lib-link"><input readonly value="${esc(L)}" onfocus="this.select()"><button class="btn secondary" id="pub-copy">Копіювати</button></div></div>`);
+    root.querySelector('#pub-review').onclick = () => viewAttempt(st.aid, () => showDone(st, d));
+    root.querySelector('#pub-copy').onclick = () => copyLink(L);
+  }
+
+  async function viewAttempt(id, back) {
+    ensureRoot().innerHTML = shell('<div class="card"><p>Завантаження…</p></div>');
+    const r = await sb.rpc('get_public_attempt', { p_attempt: id });
+    if (r.error) { root.innerHTML = shell(`<div class="card"><h2>Спроба недоступна</h2><p>${esc(r.error.message)}</p></div>`); return; }
+    const d = r.data, L = attLink(id);
+    const cards = d.questions.map((q, i) => {
+      const mark = q.qtype === 'long' ? '📝' : q.ok === true ? '✅' : '❌';
+      return `<div class="card"><div class="flex"><b>${i + 1}. ${mark}</b><span class="pill">${q.points} б.</span></div>
+        <p style="white-space:pre-wrap;font-size:1.1rem">${esc(q.prompt)}</p>
+        <div class="notice" style="white-space:pre-wrap"><b>Моя відповідь:</b> ${esc(fmtAns(q, q.answer))}</div>
+        ${d.show_answers && q.qtype !== 'long' && q.correct !== null && q.correct !== undefined ? `<div class="muted small"><b>Правильна відповідь:</b> ${esc(fmtCorrect(q))}</div>` : ''}
+        ${d.show_answers && q.explanation ? `<div class="muted small" style="white-space:pre-wrap">${esc(q.explanation)}</div>` : ''}</div>`;
+    }).join('');
+    root.innerHTML = shell(`${back ? '<p><a href="javascript:void(0)" id="pub-back">← Назад</a></p>' : ''}
+      <div class="card"><h2>${esc(d.title)}</h2><p class="muted">${esc(d.guest_name)} · ${fmtDate(d.finished_at)}</p>
+        <p style="font-size:1.2rem">Результат: <b>${d.score} з ${d.max_score}</b> балів${d.status === 'review' ? ' <span class="pill amber">частину ще перевіряє викладач</span>' : ''}</p>
+        <div class="lib-link"><input readonly value="${esc(L)}" onfocus="this.select()"><button class="btn secondary" id="pub-copy">Копіювати посилання</button></div></div>
+      ${d.teacher_comment ? `<div class="card"><h2>Коментар викладача</h2><p style="white-space:pre-wrap">${esc(d.teacher_comment)}</p></div>` : ''}
+      ${cards}`);
+    root.querySelector('#pub-copy').onclick = () => copyLink(L);
+    const bk = root.querySelector('#pub-back'); if (bk && back) bk.onclick = back;
   }
 
   function route() {
+    const ma = ATTRE.exec(location.hash);
+    if (ma) { if (ma[1] !== attId || !root) { attId = ma[1]; viewAttempt(ma[1], null); } return; }
     const m = PUBRE.exec(location.hash);
     if (m) { if (m[1] !== token || !root) { token = m[1]; boot(); } }
     else if (staffNow()) closePub();
