@@ -5,6 +5,7 @@
 
   // та сама розбірка форми, що й у «Додати завдання»
   function parse(f) {
+    if (new FormData(f).get('type') === 'matching') { const z = MSMatch.readForm(f); return {p_lesson:f.dataset.lid,p_id:null,p_type:'matching',p_prompt:z.prompt,p_options:z.options,p_correct:z.correct,p_points:z.points,p_explanation:z.explanation}; }
     const fd = new FormData(f), t = fd.get('type'), c = (fd.get('correct') || '').trim();
     let options = null, correct = null;
     if (t === 'single' || t === 'multiple') options = (fd.get('options') || '').split('\n').map(s => s.trim()).filter(Boolean);
