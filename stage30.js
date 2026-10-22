@@ -1,127 +1,163 @@
-/* MathSpace Stage 30 — image support for the shared lesson library editor.
-   Load after stage29.js. Requires the tiny exposure patch described in README.md.
-   Uses the existing "lesson-library" Storage bucket and lesson_templates.content JSON. */
+/* MathSpace Stage 30 — library editor parity helpers.
+ * Load AFTER stage18_1.js. No SQL changes.
+ * Adds per-question image support and a review-before-adding step for text/photo imports.
+ */
 (function () {
   'use strict';
-  const BUCKET = 'lesson-library';
-  const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-  const fail = r => { if (r.error) throw r.error; return r.data; };
-  const current = () => window.__MS_LessonLibraryCurrent || null;
-  const style = document.createElement('style');
-  style.textContent = `
-    .ms30-qimage{display:block;margin:10px 0;padding:10px;border:1px solid var(--line,#ded9ec);border-radius:12px}
-    .ms30-qimage img{display:block;max-width:min(100%,520px);max-height:320px;object-fit:contain;margin:8px 0;border-radius:8px}
-    .ms30-qimage .ms30-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-    .ms30-qimage input[type=file]{max-width:100%}
-    .ms30-qimage .muted{font-size:.9rem}
-  `;
-  document.head.appendChild(style);
-
-  // The original editor owns the lesson state. The tiny README patch exposes a read-only
-  // reference to that state so this extension can safely attach image_path to content items.
-  function editorRoot() { return document.querySelector('#lt181-editor'); }
-  function addImageControls() {
-    const root = editorRoot();
-    if (!root) return;
-    const forms = [...root.querySelectorAll('form[data-form="lt181question"]')];
-    forms.forEach(form => {
-      if (form.querySelector('.ms30-qimage')) return;
-      const state = current();
-      const raw = form.querySelector('[name="qi"]')?.value ?? '';
-      const idx = raw === '' ? null : Number(raw);
-      const q = idx === null ? null : state?.content?.[idx];
-      const box = document.createElement('div');
-      box.className = 'ms30-qimage';
-      box.innerHTML = `<b>Зображення до завдання</b>
-        ${q?.image_path ? `<div class="muted">Зображення вже прикріплене.</div><img alt="Зображення до завдання" src="${esc(sb.storage.from(BUCKET).getPublicUrl(q.image_path).data.publicUrl)}">` : '<div class="muted">Зображення необов’язкове. JPG, PNG або WEBP, до 10 МБ.</div>'}
-        <input type="file" accept="image/jpeg,image/png,image/webp" data-ms30-image>
-        <div class="ms30-actions">
-          ${q?.image_path ? '<button type="button" class="btn small danger" data-ms30-remove>Видалити зображення</button>' : ''}
-        </div>`;
-      form.appendChild(box);
-      const remove = box.querySelector('[data-ms30-remove]');
-      if (remove) remove.addEventListener('click', async () => {
-        const s = current();
-        if (!s || idx === null || !s.id) return alert('Спочатку збережіть урок.');
-        if (!confirm('Видалити зображення з цього завдання?')) return;
-        try {
-          const path = s.content[idx].image_path;
-          delete s.content[idx].image_path;
-          fail(await sb.from('lesson_templates').update({ content: s.content }).eq('id', s.id));
-          if (path) await sb.storage.from(BUCKET).remove([path]);
-          if (typeof toast === 'function') toast('Зображення видалено');
-          if (typeof renderApp === 'function') renderApp();
-        } catch (e) { alert(e.message || String(e)); }
-      });
-    });
-  }
-
-  const originalQuestionSave = F.lt181question;
-  if (typeof originalQuestionSave !== 'function') {
-    console.error('MathSpace Stage 30: F.lt181question not found. Check script order.');
+  if (!window.F || !window.A || !window.sb) {
+    console.error('MathSpace Stage 30: application globals not ready. Check script order.');
     return;
   }
-  F.lt181question = async function (form) {
-    const file = form.querySelector('[data-ms30-image]')?.files?.[0] || null;
-    if (!file) return originalQuestionSave.apply(this, arguments);
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Зображення має бути JPG, PNG або WEBP.');
-    if (file.size > 10 * 1024 * 1024) throw new Error('Зображення має бути не більше 10 МБ.');
-    const before = current();
-    const qiRaw = form.querySelector('[name="qi"]')?.value ?? '';
-    const oldIndex = qiRaw === '' ? null : Number(qiRaw);
-    await originalQuestionSave.apply(this, arguments);
-    // The native handler validates and persists the lesson. Wait until its state is available.
-    const state = current() || before;
-    if (!state || !state.id) throw new Error('Урок не збережено. Спочатку збережіть назву уроку, а потім додайте зображення.');
-    const index = oldIndex === null ? state.content.length - 1 : oldIndex;
-    if (index < 0 || !state.content[index]) throw new Error('Не вдалося визначити завдання для зображення.');
-    const safeName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(-100);
-    const path = `${S.profile.id}/${state.id}/question-${crypto.randomUUID()}-${safeName}`;
-    const upload = await sb.storage.from(BUCKET).upload(path, file, { contentType: file.type, upsert: false });
-    if (upload.error) throw upload.error;
-    const oldPath = state.content[index].image_path;
-    state.content[index].image_path = path;
-    const save = await sb.from('lesson_templates').update({ content: state.content }).eq('id', state.id);
-    if (save.error) {
-      delete state.content[index].image_path;
-      await sb.storage.from(BUCKET).remove([path]);
-      throw save.error;
+  const BUCKET = 'lesson-library';
+  const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  const fail = r => { if (r?.error) throw r.error; return r?.data; };
+  const state = () => window.__MS_LessonLibraryCurrent || null;
+  const b64 = blob => new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=()=>no(new Error('Не вдалося прочитати файл'));r.readAsDataURL(blob);});
+  const css=document.createElement('style');
+  css.textContent=`
+  .ms30-image{border:1px solid var(--line,#ebe8f2);padding:10px;border-radius:12px;margin-top:12px}
+  .ms30-image img{display:block;max-width:100%;max-height:280px;object-fit:contain;margin:8px 0}
+  .ms30-preview{border:1px solid var(--line,#ebe8f2);border-radius:12px;padding:14px;margin:12px 0}
+  .ms30-preview-item{border-top:1px solid var(--line,#ebe8f2);padding:10px 0}
+  .ms30-preview textarea{width:100%;min-height:70px}
+  `;
+  document.head.appendChild(css);
+
+  let pending = null;
+  function previewHTML() {
+    if (!pending) return '';
+    return `<section class="card ms30-preview"><h2>Перевірка імпорту (${pending.items.length} завдань)</h2>
+      <p class="muted small">Переглянь умови, виправ помилки розпізнавання та лише потім додай завдання до уроку.</p>
+      ${pending.items.map((q,i)=>`<div class="ms30-preview-item"><b>${i+1}. ${esc(q.qtype)}</b>
+      <label class="field">Умова<textarea data-ms30-prompt="${i}">${esc(q.prompt)}</textarea></label>
+      <label class="field">Балів<input type="number" min="0.5" max="100" step="0.5" data-ms30-points="${i}" value="${Number(q.points)||1}"></label>
+      <div class="small muted">Правильна відповідь і варіанти збережені з результату розпізнавання. Для їх зміни відкрий завдання після додавання.</div></div>`).join('')}
+      <div class="flex"><button class="btn" type="button" data-ms30-accept>Додати перевірені завдання</button><button class="btn secondary" type="button" data-ms30-cancel>Скасувати імпорт</button></div></section>`;
+  }
+  function showPreview(items, skipped=[]) {
+    if (!items.length) throw new Error('Не знайдено коректних завдань.');
+    pending = {items,skipped};
+    const host=document.querySelector('#lt181-editor');
+    if (!host) throw new Error('Не знайдено редактор бібліотеки. Відкрий урок і повтори імпорт.');
+    host.querySelector('[data-ms30-preview]')?.remove();
+    const wrap=document.createElement('div'); wrap.dataset.ms30Preview='1'; wrap.innerHTML=previewHTML();
+    host.appendChild(wrap);
+    wrap.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  function fromParsed(x) {
+    return {qtype:x.type,prompt:String(x.prompt||''),options:x.options??null,
+      correct:x.type==='matching'?(x.correct||[]).map(n=>n===0?-1:n-1):x.type==='single'?Number(x.correct)-1:x.type==='multiple'?(x.correct||[]).map(n=>Number(n)-1):x.correct,
+      points:Number(x.points)||1,explanation:String(x.explanation||'')};
+  }
+  const originalText=F.lt181import;
+  F.lt181import=async function(form) {
+    const source=String(form.elements.namedItem('test')?.value||'');
+    if(typeof window.__msParseTest!=='function') throw new Error('Не завантажено парсер stage16.js.');
+    const result=window.__msParseTest(source);
+    const items=(result.items||[]).map(fromParsed);
+    if(!items.length) throw new Error('Не знайдено завдань: '+(result.skipped||[]).join('; '));
+    showPreview(items,result.skipped||[]);
+  };
+  const originalAI=F.lt181ai;
+  F.lt181ai=async function(form) {
+    const files=[...(form.querySelector('input[type=file]')?.files||[])];
+    if(!files.length||files.length>5) throw new Error('Додайте від 1 до 5 фото.');
+    const images=[];
+    for(const file of files){
+      if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>4500000) throw new Error('Фото має бути JPG, PNG або WEBP, до 4,5 МБ кожне.');
+      images.push({mime:file.type,data:await b64(file)});
     }
-    if (oldPath) await sb.storage.from(BUCKET).remove([oldPath]);
-    if (typeof toast === 'function') toast('Завдання та зображення збережено');
-    if (typeof renderApp === 'function') renderApp();
+    if(typeof toast==='function') toast('Розпізнаємо фото…');
+    const r=await sb.functions.invoke('generate-questions',{body:{images}});
+    if(r.error) throw r.error;
+    if(r.data?.error) throw new Error(r.data.error);
+    const items=(r.data?.questions||[]).map(fromParsed);
+    if(!items.length) throw new Error('Gemini не повернув завдань.');
+    showPreview(items);
   };
 
-  // Show existing question images in the list of questions, with a preview.
-  function decorateQuestionList() {
-    const root = editorRoot(), state = current();
-    if (!root || !state?.content) return;
-    const heading = [...root.querySelectorAll('h2')].find(h => /^Завдання/.test(h.textContent.trim()));
-    const card = heading?.closest('.card');
-    if (!card) return;
-    const rows = [...card.querySelectorAll('.row')];
-    rows.forEach((row, i) => {
-      if (row.querySelector('.ms30-preview') || !state.content[i]?.image_path) return;
-      const url = sb.storage.from(BUCKET).getPublicUrl(state.content[i].image_path).data.publicUrl;
-      const preview = document.createElement('div');
-      preview.className = 'ms30-preview muted small';
-      preview.innerHTML = `<a href="${esc(url)}" target="_blank" rel="noopener">Переглянути зображення</a>`;
-      row.firstElementChild?.appendChild(preview);
-    });
+  function renderImageControls() {
+    const host=document.querySelector('#lt181-editor');
+    const s=state();
+    if(!host||!s) return;
+    const forms=[...host.querySelectorAll('form[data-form="lt181question"]')];
+    for(const form of forms){
+      if(form.querySelector('.ms30-image')) continue;
+      const raw=form.querySelector('[name="qi"]')?.value ?? '';
+      const idx=raw===''?null:Number(raw);
+      const q=idx===null?null:s.content?.[idx];
+      const block=document.createElement('div');block.className='ms30-image';
+      let image='';
+      if(q?.image_path){
+        const {data}=sb.storage.from(BUCKET).getPublicUrl(q.image_path);
+        image=`<img alt="Фото до завдання" src="${esc(data.publicUrl)}"><button type="button" class="btn small danger" data-ms30-remove-image>Видалити фото</button>`;
+      }
+      block.innerHTML=`<b>Фото до завдання (необов'язково)</b><p class="small muted">JPG, PNG або WEBP, до 10 МБ. Після збереження уроку фото залишиться прикріпленим до цього завдання.</p>${image}<input type="file" accept="image/jpeg,image/png,image/webp" data-ms30-image>`;
+      form.appendChild(block);
+      block.querySelector('[data-ms30-remove-image]')?.addEventListener('click',async()=>{
+        if(!s?.id||idx===null||!s.content[idx]?.image_path) return alert('Спочатку збережи урок і завдання.');
+        if(!confirm('Видалити фото цього завдання?'))return;
+        const path=s.content[idx].image_path;
+        const next={...s.content[idx]};delete next.image_path;s.content[idx]=next;
+        fail(await sb.from('lesson_templates').update({content:s.content}).eq('id',s.id));
+        await sb.storage.from(BUCKET).remove([path]);
+        if(typeof toast==='function')toast('Фото видалено');
+        if(typeof renderApp==='function')renderApp();
+      });
+    }
   }
 
-  let scheduled = false;
-  const obs = new MutationObserver(() => {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(() => {
-      scheduled = false;
-      addImageControls();
-      decorateQuestionList();
-    });
+  const originalQuestion=F.lt181question;
+  F.lt181question=async function(form){
+    const file=form.querySelector('[data-ms30-image]')?.files?.[0]||null;
+    if(!file) return originalQuestion.apply(this,arguments);
+    if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>10*1024*1024) throw new Error('Фото має бути JPG/PNG/WEBP до 10 МБ.');
+    // Save question through the existing, validated handler first.
+    const before=state();
+    const raw=form.querySelector('[name="qi"]')?.value??'';
+    const idx=raw===''?null:Number(raw);
+    await originalQuestion.apply(this,arguments);
+    const s=state()||before;
+    if(!s?.id) throw new Error('Спочатку збережи назву уроку, потім додай фото до завдання.');
+    const target=idx===null?s.content.length-1:idx;
+    if(!s.content[target]) throw new Error('Не вдалося знайти завдання після збереження.');
+    const old=s.content[target].image_path;
+    const path=`${S.profile.id}/${s.id}/question-${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9_.-]/g,'_').slice(-80)}`;
+    fail(await sb.storage.from(BUCKET).upload(path,file,{contentType:file.type,upsert:false}));
+    s.content[target].image_path=path;
+    try { fail(await sb.from('lesson_templates').update({content:s.content}).eq('id',s.id)); }
+    catch(e){ delete s.content[target].image_path; await sb.storage.from(BUCKET).remove([path]); throw e; }
+    if(old) await sb.storage.from(BUCKET).remove([old]);
+    if(typeof toast==='function')toast('Завдання та фото збережено');
+    if(typeof renderApp==='function')renderApp();
+  };
+
+  document.addEventListener('click',async e=>{
+    const accept=e.target.closest('[data-ms30-accept]');
+    const cancel=e.target.closest('[data-ms30-cancel]');
+    if(cancel){pending=null;document.querySelector('[data-ms30-preview]')?.remove();return;}
+    if(accept){
+      try{
+        const s=state();if(!s)throw new Error('Урок більше не відкритий.');
+        const wrap=accept.closest('[data-ms30-preview]');
+        pending.items.forEach((q,i)=>{
+          q.prompt=wrap.querySelector(`[data-ms30-prompt="${i}"]`).value.trim();
+          q.points=Number(wrap.querySelector(`[data-ms30-points="${i}"]`).value);
+          if(!q.prompt)throw new Error(`Заповни умову завдання ${i+1}.`);
+          if(!Number.isFinite(q.points)||q.points<=0||q.points>100)throw new Error(`Перевір бали завдання ${i+1}.`);
+        });
+        s.content.push(...pending.items);
+        const qs=pending.items.length;
+        if(!s.title?.trim())throw new Error('Спочатку вкажи назву уроку та збережи її.');
+        // Reuse current editor persistence by saving the existing lesson through the app's table schema.
+        fail(await sb.from('lesson_templates').update({content:s.content}).eq('id',s.id));
+        pending=null;
+        if(typeof toast==='function')toast(`Додано ${qs} завдань`);
+        if(typeof renderApp==='function')renderApp();
+      }catch(err){alert(err.message||String(err));}
+    }
   });
-  obs.observe(document.body, { childList: true, subtree: true });
-  addImageControls();
-  decorateQuestionList();
+  let scheduled=false;
+  new MutationObserver(()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;renderImageControls();});}).observe(document.body,{childList:true,subtree:true});
+  renderImageControls();
 })();
