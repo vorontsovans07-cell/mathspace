@@ -18,7 +18,7 @@
       header.insertBefore(b,close||null);
     }
     // Staff lesson listing: links route to /lessons/<student-uuid>/<lesson-uuid>.
-    if(!window.S?.profile || window.S.profile.role==='student')return;
+    if(!S?.profile || S.profile.role==='student')return;
     document.querySelectorAll('a[href^="#/t/lessons/"]').forEach(link=>{
       const match=(link.getAttribute('href')||'').match(/^#\/t\/lessons\/([0-9a-f-]{36})\/([0-9a-f-]{36})$/i);
       if(!match || link.dataset.ms28Processed)return;
@@ -56,9 +56,11 @@
     if(!confirm('Назавжди видалити цю ЧЕРНЕТКУ уроку? Пов’язані завдання, результати та матеріали можуть бути втрачені. Дію неможливо скасувати.'))return;
     button.disabled=true;
     try{
+      const files=typeof collectLessonFiles==='function'?await collectLessonFiles(lid):null; // збираємо ДО видалення
       const {data,error}=await sb.from('lessons').delete().eq('id',lid).eq('status','draft').select('id');
       if(error)throw error;
       if(!data?.length)throw new Error('Урок не видалено. Перевірте, чи це чернетка і чи маєте право керувати учнем.');
+      if(files&&typeof removeLessonFiles==='function')await removeLessonFiles(files);
       if(typeof toast==='function')toast('Чернетку уроку видалено');
       if(typeof renderApp==='function')await renderApp();else location.reload();
     }catch(e){
@@ -72,7 +74,8 @@
     const lesson=e.target.closest('[data-ms28-delete-lesson]');
     if(lesson){e.preventDefault();deleteLesson(lesson);}
   });
-  const observer=new MutationObserver(decorate);
-  observer.observe(document.body,{subtree:true,childList:true});
+  // замість спостерігача за всім DOM: подія після малювання сторінки й після малювання панелі сповіщень (stage25)
+  document.addEventListener('ms:rendered',decorate);
+  document.addEventListener('ms:panel',decorate);
   decorate();
 })();
