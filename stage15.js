@@ -166,7 +166,7 @@
     const key = Object.fromEntries(k.data.map(x => [x.question_id, x.correct]));
     const ins = await sb.from('lessons').insert({ student_id: dstSid, title: l.data.title, description: l.data.description || '' }).select('id').single();
     must(ins);
-    const nid = ins.data.id, warns = [], srcFiles = [];
+    const nid = ins.data.id, warns = [], srcFiles = [], copied = [];
     const ext = p => (String(p).match(/\.[a-z0-9]{1,5}$/i) || [''])[0];
     try {
       if (l.data.time_limit_minutes) {
@@ -179,7 +179,7 @@
         const dst = `${dstSid}/${nid}/${tag}-${Date.now()}${ext(src)}`;
         const c = await sb.storage.from(BUCKET).copy(src, dst);
         if (c.error) { warns.push(label); continue; }
-        upd[pk] = dst; upd[nk] = l.data[nk]; srcFiles.push(src);
+        upd[pk] = dst; upd[nk] = l.data[nk]; srcFiles.push(src); copied.push(dst);
       }
       if (Object.keys(upd).length) { const u = await sb.from('lessons').update(upd).eq('id', nid); if (u.error) throw u.error; }
 
@@ -197,13 +197,15 @@
           const dst = `${dstSid}/${nid}/q-${Date.now()}-${i}${ext(x.image_path)}`;
           const c = await sb.storage.from(BUCKET).copy(x.image_path, dst);
           if (c.error) { warns.push('малюнок до завдання ' + (i + 1)); continue; }
+          copied.push(dst);
           const r = await sb.rpc('set_question_image', { p_question: nqid, p_path: dst });
           if (r.error) { await sb.storage.from(BUCKET).remove([dst]); warns.push('малюнок до завдання ' + (i + 1)); }
-          else srcFiles.push(x.image_path);
+          else { srcFiles.push(x.image_path); copied.push(dst); }
         }
       }
     } catch (e) {
       await sb.from('lessons').delete().eq('id', nid); // відкат, щоб не лишати наполовину створений урок
+      if (copied.length) await sb.storage.from(BUCKET).remove(copied).catch(() => {}); // і скопійовані файли
       throw e;
     }
     return { id: nid, warns, srcFiles };
