@@ -229,6 +229,7 @@ async function renderAuth() {
     const code = decodeURIComponent(h.slice(7)).replace(/[^a-zA-Z0-9]/g, '').slice(0, 40);
     $('#app').innerHTML = authShell('<div class="boot">Перевіряємо запрошення…</div>');
     const { data, error } = await sb.rpc('get_invite_teacher', { p_code: code });
+    if (location.hash !== h) return; // хеш змінився, поки чекали відповідь
     const t = !error && data && data[0];
     html = t
       ? registerForm(code, 'Реєстрація учня', `Викладач: <b>${esc(fullName(t))}</b>`)
@@ -301,11 +302,13 @@ function renderApp() {
     <nav class="bottom">${nav}</nav>
   </div>`;
   hydrateAvatars();
+  document.dispatchEvent(new CustomEvent('ms:rendered'));
   const id = ++S.loadId;
   TAB[tab]().then(html => {
     if (id !== S.loadId) return;
     $('#content').innerHTML = html;
     hydrateAvatars();
+    document.dispatchEvent(new CustomEvent('ms:rendered'));
   }).catch(err => {
     if (id !== S.loadId) return;
     $('#content').innerHTML = `<div class="notice bad">Не вдалося завантажити дані: ${esc(uaErr(err))}</div>`;
@@ -340,8 +343,7 @@ const TAB = {
     return `<div class="card hero"><div class="eyebrow">Вітаємо у MathSpace</div><h2>Привіт, ${esc(me.first_name)}! 👋</h2><span class="pill">${ROLE[me.role]}</span></div>
       <div class="grid">${stats}</div>
       <div class="card"><h2>Що вже працює</h2>
-        <p class="muted">Вхід, ролі й права доступу, реєстрація учнів за посиланням викладача, профіль із фото, керування викладачами й адміністраторами, перенесення учнів та журнал дій.</p>
-        <p class="muted">Уроки, тести, розклад і фінанси з’являться в наступних етапах.</p></div>`;
+        <p class="muted">Вхід і ролі, запрошення учнів, уроки з матеріалами, тести й домашні завдання, бібліотека уроків, сповіщення, профіль із фото, керування викладачами та журнал дій.</p></div>`;
   },
 
   async teachers() {
@@ -554,6 +556,9 @@ const F = {
   }
 };
 
+/* const-змінні не стають властивостями window; відкриваємо потрібні для stage-файлів */
+Object.assign(window, { S, sb, F, A, TAB });
+
 document.addEventListener('click', async e => {
   const el = e.target.closest('[data-act]');
   if (!el || !A[el.dataset.act]) return;
@@ -617,34 +622,34 @@ window.addEventListener('hashchange', () => {
   await refresh();
 })();
 </script>
-<script src="stage2.js"></script>
-<script src="stage3.js"></script>
-<script src="stage4.js"></script>
-<script src="stage5.js"></script>
-<script src="stage6.js"></script>
-<script src="stage7.js"></script>
-<script src="stage8.js"></script>
-<script src="stage9.js"></script>
-<script src="stage10.js"></script>
-<script src="stage11.js"></script>
-<script src="stage12.js"></script>
-<script src="stage13.js"></script>
-<script src="stage14.js"></script>
-<script src="stage15.js"></script>
-<script src="stage16.js"></script>
-<script src="mathkeys.js"></script>
-<script src="stage17.js"></script>
-<script src="stage18.js"></script>
-<script src="stage18_1.js"></script>
-<script src="stage30.js"></script>
-<script src="stage19.js"></script>
-<script src="stage20.js"></script>
-<script src="stage21.js"></script>
-<script src="stage23.js"></script>
-<script src="stage25.js"></script>
-<script src="stage26.js"></script>
-<script src="stage27.js"></script>
-<script src="stage28.js"></script>
-<script src="stage29.js"></script>
+<script src="stage2.js?v=2"></script>
+<script src="stage3.js?v=2"></script>
+<script src="stage4.js?v=2"></script>
+<script src="stage5.js?v=2"></script>
+<script src="stage6.js?v=2"></script>
+<script src="stage7.js?v=2"></script>
+<script src="stage8.js?v=2"></script>
+<script src="stage9.js?v=2"></script>
+<script src="stage10.js?v=2"></script>
+<script src="stage11.js?v=2"></script>
+<script src="stage12.js?v=2"></script>
+<script src="stage13.js?v=2"></script>
+<script src="stage14.js?v=2"></script>
+<script src="stage15.js?v=2"></script>
+<script src="stage16.js?v=2"></script>
+<script src="mathkeys.js?v=2"></script>
+<script src="stage17.js?v=2"></script>
+<script src="stage18.js?v=2"></script>
+<script src="stage18_1.js?v=2"></script>
+<script src="stage30.js?v=2"></script>
+<script src="stage19.js?v=2"></script>
+<script src="stage20.js?v=2"></script>
+<script src="stage21.js?v=2"></script>
+<script src="stage23.js?v=2"></script>
+<script src="stage25.js?v=2"></script>
+<script src="stage26.js?v=2"></script>
+<script src="stage27.js?v=2"></script>
+<script src="stage28.js?v=2"></script>
+<script src="stage29.js?v=2"></script>
 </body>
 </html>
