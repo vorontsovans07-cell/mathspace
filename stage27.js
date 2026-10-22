@@ -1,3 +1,4 @@
+
 /* MathSpace Stage 27 — teacher homework review queue + mobile bottom-nav fix.
    Add <script src="stage27.js"></script> after stage26.js in index.html. */
 (function () {
@@ -88,11 +89,13 @@ async function signedPhotoLinks(submission) {
   let paths = Array.isArray(submission.image_paths) ? submission.image_paths.filter(Boolean) : [];
   if (!paths.length && submission.image_path) paths = [submission.image_path];
   const links = [];
-  for (let i = 0; i < paths.length; i++) {
-    const { data, error } = await sb.storage.from('homework-photos').createSignedUrl(paths[i], 1800);
-    if (!error && data?.signedUrl) {
-      links.push(`<a class="btn small secondary" href="${esc(data.signedUrl)}" target="_blank" rel="noopener">Фото ${i + 1}</a>`);
-    }
+  if (paths.length) {
+    const { data } = await sb.storage.from('homework-photos').createSignedUrls(paths, 1800); // один запит замість N
+    const byPath = new Map((data || []).filter(x => x.signedUrl).map(x => [x.path, x.signedUrl]));
+    paths.forEach((p, i) => {
+      const u = byPath.get(p);
+      if (u) links.push(`<a class="btn small secondary" href="${esc(u)}" target="_blank" rel="noopener">Фото ${i + 1}</a>`);
+    });
   }
   return links.length
     ? `<div class="ms-review-photos" aria-label="Фото виконаної роботи">${links.join('')}</div>`
@@ -179,7 +182,8 @@ if (typeof A !== 'undefined') {
     const input = card?.querySelector('[name="ms-review-feedback"]');
     const typed = String(input?.value || '').trim();
     const oldFeedback = String(sub.teacher_feedback || '');
-    const feedback = typed || oldFeedback;
+    // якщо поле є на сторінці, воно головне: порожнє значення очищає старий коментар
+    const feedback = input ? typed : oldFeedback;
 
     button.disabled = true;
     try {
