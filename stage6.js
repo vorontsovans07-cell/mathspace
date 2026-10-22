@@ -3,21 +3,14 @@
 (function () {
   'use strict';
 
-  /* ---------- безпечний доступ до глобальних змінних ---------- */
-  const has = n => { try { return typeof (0, eval)(n) !== 'undefined'; } catch (e) { return false; } };
-  const get = n => { try { return (0, eval)(n); } catch (e) { return undefined; } };
-  function setGlobal(n, fn) {
-    window['__s6_' + n] = fn;
-    try { (0, eval)(n + ' = window.__s6_' + n); } catch (e) { window[n] = fn; }
-  }
-
-  const esc = has('esc') ? get('esc') : s => String(s == null ? '' : s)
+  /* ---------- доступ до глобальних змінних (без eval) ---------- */
+  const esc6 = typeof esc === 'function' ? esc : s => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const say = m => { if (has('toast')) get('toast')(m); else alert(m); };
-  const redraw = () => { if (has('renderApp')) get('renderApp')(); else location.reload(); };
+  const say = m => { if (typeof toast === 'function') toast(m); else alert(m); };
+  const redraw = () => { if (typeof renderApp === 'function') renderApp(); else location.reload(); };
 
   function resizeImg(file, max) {
-    if (has('resizeToJpeg')) return get('resizeToJpeg')(file, max);
+    if (typeof resizeToJpeg === 'function') return resizeToJpeg(file, max);
     return new Promise((ok, fail) => {
       const url = URL.createObjectURL(file);
       const im = new Image();
@@ -61,7 +54,7 @@ input,select,textarea,button{font-size:1rem}
 
   /* ---------- малюнки ---------- */
   const BUCKET = 'lessons';
-  const client = () => (has('sb') ? get('sb') : null);
+  const client = () => (typeof sb !== 'undefined' ? sb : null);
 
   async function urls(rows) {
     const sb = client();
@@ -70,7 +63,7 @@ input,select,textarea,button{font-size:1rem}
     const { data } = await sb.storage.from(BUCKET).createSignedUrls(paths, 3600);
     return Object.fromEntries((data || []).filter(x => x.signedUrl).map(x => [x.path, x.signedUrl]));
   }
-  const imgTag = u => `<img class="qimg" src="${esc(u)}" alt="Малюнок до завдання">`;
+  const imgTag = u => `<img class="qimg" src="${esc6(u)}" alt="Малюнок до завдання">`;
 
   function after(html, marker, tag, add) {
     const i = html.indexOf(marker);
@@ -79,9 +72,9 @@ input,select,textarea,button{font-size:1rem}
     return j < 0 ? html : html.slice(0, j + tag.length) + add + html.slice(j + tag.length);
   }
 
-  if (has('studentLesson')) {
-    const baseStudent = get('studentLesson');
-    setGlobal('studentLesson', async function (lid) {
+  if (typeof studentLesson === 'function') {
+    const baseStudent = studentLesson;
+    window.studentLesson = (async function (lid) {
       let html = await baseStudent.apply(this, arguments);
       try {
         const sb = client();
@@ -97,9 +90,9 @@ input,select,textarea,button{font-size:1rem}
     });
   } else console.warn('stage6: studentLesson не знайдено');
 
-  if (has('staffLesson')) {
-    const baseStaff = get('staffLesson');
-    setGlobal('staffLesson', async function (sid, lid) {
+  if (typeof staffLesson === 'function') {
+    const baseStaff = staffLesson;
+    window.staffLesson = (async function (sid, lid) {
       let html = await baseStaff.apply(this, arguments);
       try {
         const sb = client();
@@ -112,10 +105,10 @@ input,select,textarea,button{font-size:1rem}
           if (!html.includes(btn)) continue;
           const hasImg = q.image_path && u[q.image_path];
           const ctl = `<div style="flex-basis:100%">${hasImg ? imgTag(u[q.image_path]) : ''}
-        <form data-form="qimg" data-qid="${q.id}" data-sid="${sid}" data-lid="${lid}" data-old="${esc(q.image_path || '')}" class="flex">
+        <form data-form="qimg" data-qid="${q.id}" data-sid="${sid}" data-lid="${lid}" data-old="${esc6(q.image_path || '')}" class="flex">
           <input type="file" accept="image/jpeg,image/png,image/webp" required style="flex:1;min-width:200px;max-width:340px">
           <button class="btn small secondary">${hasImg ? 'Замінити малюнок' : 'Додати малюнок'}</button>
-          ${hasImg ? `<button type="button" class="btn small danger" data-act="rmqimg" data-qid="${q.id}" data-old="${esc(q.image_path)}">Прибрати</button>` : ''}
+          ${hasImg ? `<button type="button" class="btn small danger" data-act="rmqimg" data-qid="${q.id}" data-old="${esc6(q.image_path)}">Прибрати</button>` : ''}
         </form></div>`;
           html = html.replace(btn, () => btn + ctl);
         }
@@ -124,8 +117,8 @@ input,select,textarea,button{font-size:1rem}
     });
   } else console.warn('stage6: staffLesson не знайдено');
 
-  const Fobj = has('F') ? get('F') : null;
-  const Aobj = has('A') ? get('A') : null;
+  const Fobj = typeof F !== 'undefined' ? F : null;
+  const Aobj = typeof A !== 'undefined' ? A : null;
 
   if (Fobj) {
     Fobj.qimg = async function (f) {
@@ -157,5 +150,5 @@ input,select,textarea,button{font-size:1rem}
     };
   } else console.warn('stage6: A не знайдено');
 
-  try { if (has('S') && get('S').profile) redraw(); } catch (e) { /* ігноруємо */ }
+  try { if (typeof S !== 'undefined' && S.profile) redraw(); } catch (e) { /* ігноруємо */ }
 })();
