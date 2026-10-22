@@ -39,6 +39,7 @@ function paintPanel(){
  if(!panel){panel=document.createElement('section');panel.className='ms-notice-panel';panel.setAttribute('role','dialog');panel.setAttribute('aria-label','Сповіщення');document.body.appendChild(panel);}
  panel.innerHTML=`<div class="ms-notice-head"><strong>🔔 Сповіщення</strong><div><button type="button" class="ms-notice-action" data-ms-all>Прочитати все</button><button type="button" class="ms-notice-action" data-ms-close aria-label="Закрити">✕</button></div></div>`+
  (state.items.length?state.items.map(n=>`<button type="button" class="ms-notice-card ${n.read_at?'':'unread'}" data-ms-item="${n.id}"><b>${escapeHTML(n.title)}</b><span>${escapeHTML(n.body)}</span><small>${new Date(n.created_at).toLocaleString('uk-UA')}</small></button>`).join(''):'<p style="padding:12px">Нових сповіщень поки немає.</p>');
+ document.dispatchEvent(new Event('ms:panel'));
 }
 async function read(ids){
  if(!ids.length)return;
@@ -60,8 +61,7 @@ document.addEventListener('click',e=>{
   location.hash='#/t/lessons';
  }
 });
-const observer=new MutationObserver(()=>{if(document.querySelector('.top')&&!document.querySelector('[data-ms-bell]'))shell();});
-observer.observe(document.body,{childList:true,subtree:true});
+document.addEventListener('ms:rendered',()=>{if(document.querySelector('.top')&&!document.querySelector('[data-ms-bell]'))shell();});
 setInterval(()=>{if(S.session&&S.profile){shell();fetchNotices();}else if(state.lastUser){state.lastUser=null;state.items=[];state.open=false;paintPanel();}},45000);
 setTimeout(()=>{shell();fetchNotices();},1200);
 window.MathSpaceNotifications={refresh:fetchNotices};
