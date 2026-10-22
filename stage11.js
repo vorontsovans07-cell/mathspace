@@ -34,26 +34,37 @@
     if (error) { await sb.storage.from(BUCKET).remove([path]); throw error; }
   }
 
-  const baseAdd = F.addq;
-  F.addq = async function (f) {
-    const inp = f.querySelector('input[name="qphoto"]');
-    const file = inp && inp.files && inp.files[0];
-    if (!file) return baseAdd.apply(this, arguments);
+  function checkPhoto(file) {
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Фото має бути JPG, PNG або WEBP');
     if (file.size > 15 * 1024 * 1024) throw new Error('Фото більше за 15 МБ');
-    const lid = f.dataset.lid, sid = rt()[3];
-    const before = await questionIds(lid);
-    await baseAdd.apply(this, arguments);               // зберігає завдання й перемальовує сторінку
-    const after = await questionIds(lid);
-    const qid = after.find(id => !before.includes(id));
-    if (!qid) { toast('Завдання додано, але фото не вдалося прикріпити. Додайте його кнопкою «Додати малюнок».', true); return; }
-    try {
-      await attachPhoto(file, sid, lid, qid);
-      toast('Завдання додано разом із фото');
-    } catch (e) {
-      toast('Завдання додано, але фото не збережено: ' + (e.message || e), true);
+  }
+
+  /* Спільний потік «зберегти завдання + прикріпити фото».
+     save() має створити рівно одне нове завдання. Повертає { photo: 'none' | 'ok' | 'fail', error }.
+     Використовується тут, у stage13 («Додати всі») і в stage17 (відповідності). */
+  window.__msPhotoFlow = {
+    async run(f, save) {
+      const inp = f.querySelector('input[name="qphoto"]');
+      const file = inp && inp.files && inp.files[0];
+      if (!file) { await save(); return { photo: 'none' }; }
+      checkPhoto(file);                                   // помилка ДО збереження завдання
+      const lid = f.dataset.lid, sid = rt()[3];
+      const before = await questionIds(lid);
+      await save();
+      const qid = (await questionIds(lid)).find(id => !before.includes(id));
+      if (!qid) return { photo: 'fail', error: new Error('не вдалося визначити нове завдання') };
+      try { await attachPhoto(file, sid, lid, qid); return { photo: 'ok' }; }
+      catch (e) { return { photo: 'fail', error: e }; }
     }
-    renderApp();
+  };
+
+  const baseAdd = F.addq;
+  F.addq = async function (f) {
+    const args = arguments;
+    const r = await window.__msPhotoFlow.run(f, () => baseAdd.apply(this, args));
+    if (r.photo === 'ok') toast('Завдання додано разом із фото');
+    else if (r.photo === 'fail') toast('Завдання додано, але фото не збережено: ' + (r.error.message || r.error) + '. Додайте його кнопкою «Додати малюнок».', true);
+    if (r.photo !== 'none') renderApp();
   };
 
   /* =============== 2. Водяний знак при завантаженні файлів =============== */
