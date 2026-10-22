@@ -52,8 +52,7 @@ async function studentLesson(lid) {
     sb.from('questions').select('*').eq('lesson_id', lid).order('sort_order'),
     sb.from('attempts').select('*').eq('lesson_id', lid).order('created_at', { ascending: false })]);
   must(l, q, a);
-  const last = S.last && S.last.lid === lid ? S.last.res : null;
-  S.last = null;
+  const last = S.last && S.last.lid === lid ? S.last.res : null; // скидається при зміні сторінки (див. hashchange нижче)
   let result = '';
   if (last) {
     const m = Object.fromEntries(last.results.map(r => [r.question_id, r]));
@@ -150,8 +149,10 @@ Object.assign(A, {
   },
   async dellesson(el) {
     if (!window.confirm('Видалити цей урок разом із завданнями?')) return;
+    const files = await collectLessonFiles(el.dataset.id);
     const { error } = await sb.from('lessons').delete().eq('id', el.dataset.id);
     if (error) throw error;
+    await removeLessonFiles(files);
     toast('Урок видалено');
     location.hash = '#/t/lessons/' + el.dataset.sid;
   }
@@ -226,5 +227,28 @@ Object.assign(F, {
   }
 });
 
+
+/* Файли уроку у сховищі: збираємо ДО видалення, бо рядки зникнуть разом з уроком (cascade) */
+async function collectLessonFiles(lid) {
+  const out = { lessons: [], hw: [] };
+  try {
+    const l = await sb.from('lessons').select('presentation_path,notes_path').eq('id', lid).maybeSingle();
+    if (l.data) out.lessons.push(l.data.presentation_path, l.data.notes_path);
+    const q = await sb.from('questions').select('image_path').eq('lesson_id', lid);
+    (q.data || []).forEach(x => out.lessons.push(x.image_path));
+    const h = await sb.from('homework_submissions').select('image_path,image_paths').eq('lesson_id', lid);
+    (h.data || []).forEach(x => { out.hw.push(x.image_path); (x.image_paths || []).forEach(p => out.hw.push(p)); });
+  } catch (e) { console.warn('collectLessonFiles', e); }
+  out.lessons = [...new Set(out.lessons.filter(Boolean))];
+  out.hw = [...new Set(out.hw.filter(Boolean))];
+  return out;
+}
+async function removeLessonFiles(f) {
+  try {
+    if (f.lessons.length) await sb.storage.from('lessons').remove(f.lessons);
+    if (f.hw.length) await sb.storage.from('homework-photos').remove(f.hw);
+  } catch (e) { console.warn('removeLessonFiles', e); }
+}
+window.addEventListener('hashchange', () => { S.last = null; });
 
 if (S.profile) renderApp();
