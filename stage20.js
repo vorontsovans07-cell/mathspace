@@ -4,7 +4,10 @@
   'use strict';
   if (window.__msStage20) return;
   window.__msStage20 = true;
-  const choices = new Map();
+  const choices = {
+    get: k => { try { return sessionStorage.getItem('ms20_' + k) || ''; } catch (e) { return ''; } },
+    set: (k, v) => { try { sessionStorage.setItem('ms20_' + k, v); } catch (e) {} }
+  };
   const style = document.createElement('style');
   style.textContent = `
     .ms20-picker { border:1px solid #dcd4f9; background:#f8f5ff; }
@@ -39,7 +42,7 @@
     const groups = cards.map(el => ({el,type:groupType(el)})).filter(x => x.type);
     if (!groups.length) return html;
     const available = new Set(groups.map(x => x.type));
-    const selected = choices.get(lid) || '';
+    const selected = choices.get(lid);
     const picker = document.createElement('div');
     picker.className = 'card ms20-picker';
     picker.innerHTML = `<h2>Що хочете створити?</h2>
