@@ -124,9 +124,12 @@
     const old=resp.data;
     const existing=Array.isArray(old?.exercises)?old.exercises:[];
     if(existing.length+added.length>100)throw Error('Ліміт — 100 вправ загалом');
-    const patch={...(old||{}),lesson_id:lid,exercises:[...existing,...added],updated_at:new Date().toISOString()};
-    const saved=await sb.from('lesson_homework').upsert(patch,{onConflict:'lesson_id'});
-    if(saved.error)throw saved.error;
+    const next=[...existing,...added];
+    if(typeof window.__msHwSave==='function')await window.__msHwSave(lid,{exercises:next},old||null);
+    else{
+      const saved=await sb.from('lesson_homework').upsert({...(old||{}),lesson_id:lid,exercises:next,updated_at:new Date().toISOString()},{onConflict:'lesson_id'});
+      if(saved.error)throw saved.error;
+    }
     toast(`Додано ${added.length} вправ до ДЗ. Перевірте перед публікацією.`);
     renderApp();
   };
