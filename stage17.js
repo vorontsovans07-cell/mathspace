@@ -82,13 +82,18 @@
   F.addq=async function(form) {
     if (new FormData(form).get('type') !== 'matching') return oldAdd.apply(this,arguments);
     const m=readForm(form);
-    const {error}=await sb.rpc('save_question',{
-      p_lesson:form.dataset.lid,p_id:null,p_type:'matching',p_prompt:m.prompt,
-      p_options:m.options,p_correct:m.correct,p_points:m.points,p_explanation:m.explanation
-    });
-    if(error) throw error;
+    const save=async()=>{
+      const {error}=await sb.rpc('save_question',{
+        p_lesson:form.dataset.lid,p_id:null,p_type:'matching',p_prompt:m.prompt,
+        p_options:m.options,p_correct:m.correct,p_points:m.points,p_explanation:m.explanation
+      });
+      if(error) throw error;
+    };
+    const r=window.__msPhotoFlow?await window.__msPhotoFlow.run(form,save):(await save(),{photo:'none'});
     if(form.dataset.ai && S.ai) S.ai.items=S.ai.items.filter(q=>String(q.id)!==form.dataset.ai);
-    toast('Завдання на відповідність додано');renderApp();
+    if(r.photo==='fail')toast('Завдання додано, але фото не збережено: '+(r.error.message||r.error),true);
+    else toast(r.photo==='ok'?'Завдання на відповідність додано разом із фото':'Завдання на відповідність додано');
+    renderApp();
   };
   document.addEventListener('change',ev=>{
     const target=ev.target;
