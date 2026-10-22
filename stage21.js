@@ -50,14 +50,25 @@
       card.append(img, label, remove); st.preview.append(card);
     });
   }
-  function add(form, items) {
+  // Великі фото стискаємо до JPEG 1600 px, а не відхиляємо
+  async function shrink(f) {
+    if (f.size <= SIZE && f.size <= 1_500_000) return f;
+    if (typeof resizeToJpeg !== 'function') return f;
+    try {
+      const blob = await resizeToJpeg(f, 1600);
+      return new File([blob], (f.name || 'photo').replace(/\.[a-z0-9]+$/i, '') + '.jpg', { type: 'image/jpeg' });
+    } catch (e) { return f; }
+  }
+  async function add(form, items) {
     const st = context(form);
     if (!st) return;
     const files = Array.from(items || []);
     let added = 0;
-    for (const f of files) {
+    for (let f of files) {
       if (!(f instanceof File) || !TYPES.has(f.type)) continue;
-      if (f.size > SIZE) { say(`Фото «${f.name || 'без назви'}» більше за 4,5 МБ`); continue; }
+      if (st.files.length >= MAX) { say('Можна додати не більше 5 фотографій'); break; }
+      f = await shrink(f);
+      if (f.size > SIZE) { say(`Фото «${f.name || 'без назви'}» занадто велике навіть після стискання`); continue; }
       if (st.files.length >= MAX) { say('Можна додати не більше 5 фотографій'); break; }
       st.files.push(f); added++;
     }
