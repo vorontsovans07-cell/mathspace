@@ -47,23 +47,26 @@
     if (!forms.length) return;
     if (!confirm('Додати в тест завдань: ' + forms.length + '? ШІ міг помилитися, тож перегляньте умови й відповіді.')) return;
     el.dataset.busy = '1'; el.disabled = true; el.textContent = 'Додаємо…';
-    const added = [], failed = [];
+    const added = [], failed = [], photoFailed = [];
     try {
       for (let i = 0; i < forms.length; i++) {
         const f = forms[i];
         try {
-          const { error } = await sb.rpc('save_question', parse(f));
-          if (error) throw error;
+          const payload = parse(f);
+          const save = async () => { const { error } = await sb.rpc('save_question', payload); if (error) throw error; };
+          const r = window.__msPhotoFlow ? await window.__msPhotoFlow.run(f, save) : (await save(), { photo: 'none' });
           added.push(f.dataset.ai);
+          if (r.photo === 'fail') photoFailed.push('№' + (i + 1));
         } catch (e) {
           failed.push('№' + (i + 1) + ': ' + (e.message || e));
         }
       }
     } finally {
       if (S.ai) S.ai.items = S.ai.items.filter(q => !added.includes(q.id));
-      toast(failed.length
+      const tail = photoFailed.length ? ` Фото не збережено для: ${photoFailed.join(', ')}.` : '';
+      toast((failed.length
         ? `Додано: ${added.length}. Не додано: ${failed.length} (${failed.join('; ')})`
-        : `Додано завдань: ${added.length}`, !!failed.length);
+        : `Додано завдань: ${added.length}`) + tail, !!(failed.length || photoFailed.length));
       renderApp();
     }
   };
