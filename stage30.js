@@ -4,7 +4,7 @@
  */
 (function () {
   'use strict';
-  if (!window.F || !window.A || !window.sb) {
+  if (typeof F === 'undefined' || typeof A === 'undefined' || typeof sb === 'undefined') {
     console.error('MathSpace Stage 30: application globals not ready. Check script order.');
     return;
   }
@@ -89,11 +89,14 @@
       const block=document.createElement('div');block.className='ms30-image';
       let image='';
       if(q?.image_path){
-        const {data}=sb.storage.from(BUCKET).getPublicUrl(q.image_path);
-        image=`<img alt="Фото до завдання" src="${esc(data.publicUrl)}"><button type="button" class="btn small danger" data-ms30-remove-image>Видалити фото</button>`;
+        image=`<img alt="Фото до завдання" data-ms30-path="${esc(q.image_path)}"><button type="button" class="btn small danger" data-ms30-remove-image>Видалити фото</button>`;
       }
       block.innerHTML=`<b>Фото до завдання (необов'язково)</b><p class="small muted">JPG, PNG або WEBP, до 10 МБ. Після збереження уроку фото залишиться прикріпленим до цього завдання.</p>${image}<input type="file" accept="image/jpeg,image/png,image/webp" data-ms30-image>`;
       form.appendChild(block);
+      // бакет приватний: показуємо через підписане посилання
+      block.querySelectorAll('img[data-ms30-path]').forEach(img=>{
+        sb.storage.from(BUCKET).createSignedUrl(img.dataset.ms30Path,3600).then(({data})=>{ if(data&&data.signedUrl)img.src=data.signedUrl; });
+      });
       block.querySelector('[data-ms30-remove-image]')?.addEventListener('click',async()=>{
         if(!s?.id||idx===null||!s.content[idx]?.image_path) return alert('Спочатку збережи урок і завдання.');
         if(!confirm('Видалити фото цього завдання?'))return;
@@ -146,11 +149,12 @@
           if(!q.prompt)throw new Error(`Заповни умову завдання ${i+1}.`);
           if(!Number.isFinite(q.points)||q.points<=0||q.points>100)throw new Error(`Перевір бали завдання ${i+1}.`);
         });
-        s.content.push(...pending.items);
         const qs=pending.items.length;
         if(!s.title?.trim())throw new Error('Спочатку вкажи назву уроку та збережи її.');
-        // Reuse current editor persistence by saving the existing lesson through the app's table schema.
-        fail(await sb.from('lesson_templates').update({content:s.content}).eq('id',s.id));
+        const start=s.content.length;
+        s.content.push(...pending.items);
+        try{ fail(await sb.from('lesson_templates').update({content:s.content}).eq('id',s.id)); }
+        catch(e){ s.content.length=start; throw e; } // не лишаємо дублікатів при помилці
         pending=null;
         if(typeof toast==='function')toast(`Додано ${qs} завдань`);
         if(typeof renderApp==='function')renderApp();
