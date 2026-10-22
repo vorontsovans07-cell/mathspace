@@ -9,6 +9,34 @@ let pending=false,lastUser='';
 function available(){return location.protocol==='https:'&&'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window;}
 function notify(text,bad=false){const x=document.querySelector('[data-ms-push-status]');if(x){x.textContent=text;x.classList.toggle('ms-push-error',bad);}else if(typeof toast==='function')toast(text,bad);}
 async function getRegistration(){return navigator.serviceWorker.register('ms-push-sw.js',{scope:'./'});}
+// Прив'язує підписку цього браузера до поточного користувача (переприв'язує, якщо раніше була чужа). Потрібен 27_push_register.sql
+async function registerOnServer(s){
+ const {error}=await sb.rpc('ms_register_push',{p_endpoint:s.endpoint,p_p256dh:s.keys.p256dh,p_auth:s.keys.auth});
+ if(error)throw error;
+}
+// Якщо дозвіл уже є, тихо відновлюємо прив'язку після входу (без запитів дозволу)
+let syncedFor='';
+async function syncSilently(){
+ const uid=S?.session?.user?.id;
+ if(!uid||syncedFor===uid||!available()||Notification.permission!=='granted'||!VAPID_PUBLIC_KEY)return;
+ syncedFor=uid;
+ try{
+  const reg=await navigator.serviceWorker.getRegistration('./');
+  const sub=await reg?.pushManager.getSubscription();
+  const s=sub&&sub.toJSON();
+  if(s?.keys?.p256dh&&s.keys.auth)await registerOnServer(s);
+ }catch(_){syncedFor='';}
+}
+// Перед виходом відв'язуємо цей пристрій від акаунта, щоб чужі сповіщення сюди не надходили
+async function unbindBeforeLogout(){
+ try{
+  const reg=await navigator.serviceWorker.getRegistration('./');
+  const sub=await reg?.pushManager.getSubscription();
+  if(sub)await sb.from('ms_push_subscriptions').delete().eq('endpoint',sub.endpoint);
+ }catch(_){}
+ syncedFor='';
+}
+if(typeof A!=='undefined'&&A.logout){const baseLogout=A.logout;A.logout=async function(){await unbindBeforeLogout();return baseLogout.apply(this,arguments);};}
 async function setup(){
  if(pending)return;
  pending=true;
@@ -28,13 +56,7 @@ async function setup(){
   }
   if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64urlToUint8(VAPID_PUBLIC_KEY)});
   const s=sub.toJSON();if(!s.keys?.p256dh||!s.keys?.auth)throw Error('Браузер не повернув ключі підписки.');
-  const {error:lookupError,data:prior}=await sb.from('ms_push_subscriptions').select('id,user_id').eq('endpoint',s.endpoint).maybeSingle();
-  if(lookupError)throw lookupError;
-  if(prior){if(prior.user_id!==S.session.user.id)throw Error('Цей браузер прив’язаний до іншого користувача. Спочатку вимкніть push в іншому акаунті.');}
-  else{
-   const {error}=await sb.from('ms_push_subscriptions').insert({user_id:S.session.user.id,endpoint:s.endpoint,p256dh:s.keys.p256dh,auth_key:s.keys.auth});
-   if(error)throw error;
-  }
+  await registerOnServer(s);
   notify('Сповіщення на цьому пристрої увімкнено.');
  }catch(err){notify('Не вдалося підключити push: '+(err.message||String(err)),true);}finally{pending=false;}
 }
@@ -60,8 +82,9 @@ document.addEventListener('click',event=>{
  if(event.target.closest('[data-ms-push-on]'))setup();
  if(event.target.closest('[data-ms-push-off]'))disable();
 });
-const ob=new MutationObserver(()=>{if(S?.session?.user?.id&&!document.querySelector('.ms-push-control'))mount();});
-ob.observe(document.body,{subtree:true,childList:true});
-setInterval(()=>{if(S?.session?.user?.id)mount();else{lastUser='';document.querySelector('.ms-push-control')?.remove();}},12000);
-setTimeout(mount,1400);
+document.addEventListener('ms:rendered',()=>{
+ if(S?.session?.user?.id){mount();syncSilently();}
+ else{lastUser='';syncedFor='';document.querySelector('.ms-push-control')?.remove();}
+});
+setTimeout(()=>{mount();syncSilently();},1400);
 })();
