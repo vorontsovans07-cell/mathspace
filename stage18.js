@@ -34,12 +34,35 @@ async function createTemplate(lid){
  }
  changes.content=content;
  must(await sb.from('lesson_templates').update(changes).eq('id',t));
+ // час на тест і домашнє завдання (потрібен 28_library_parity.sql)
+ try{
+  const lm=await sb.from('lessons').select('time_limit_minutes').eq('id',lid).maybeSingle();
+  const hw=await sb.from('lesson_homework').select('instructions,exercises').eq('lesson_id',lid).maybeSingle();
+  const extra={time_limit_minutes:(lm.data&&lm.data.time_limit_minutes)||null,
+   homework:hw.data?{instructions:hw.data.instructions||'',exercises:Array.isArray(hw.data.exercises)?hw.data.exercises:[]}:null};
+  if(extra.time_limit_minutes||(extra.homework&&(extra.homework.instructions||extra.homework.exercises.length))){
+   const u=await sb.from('lesson_templates').update(extra).eq('id',t);
+   if(u.error)errors.push('час і ДЗ'+(/column|schema cache/i.test(u.error.message)?': виконайте 28_library_parity.sql':': '+u.error.message));
+  }
+ }catch(e){errors.push('час і ДЗ: '+e.message)}
  if(errors.length)throw new Error('Шаблон створено, але частину файлів не скопійовано: '+errors.join('; '));
  toast('Урок збережено у приватній бібліотеці');return t;
 }
 async function assignTemplate(tid,sid){
  const res=must(await sb.rpc('lesson_from_template',{p_template:tid,p_student:sid}));
  const lid=res.lesson_id,changes={},fail=[];
+ try{
+  const tp=await sb.from('lesson_templates').select('time_limit_minutes,homework').eq('id',tid).maybeSingle();
+  if(!tp.error&&tp.data){
+   if(tp.data.time_limit_minutes){const u=await sb.from('lessons').update({time_limit_minutes:tp.data.time_limit_minutes}).eq('id',lid);if(u.error)fail.push('ліміт часу')}
+   const hw=tp.data.homework;
+   if(hw&&((hw.instructions&&String(hw.instructions).trim())||(Array.isArray(hw.exercises)&&hw.exercises.length))){
+    // ДЗ лишається прихованим, доки викладач його не опублікує
+    const i=await sb.from('lesson_homework').insert({lesson_id:lid,instructions:String(hw.instructions||''),exercises:Array.isArray(hw.exercises)?hw.exercises:[],published:false,updated_at:new Date().toISOString()});
+    if(i.error)fail.push('домашнє завдання: '+i.error.message);
+   }
+  }
+ }catch(e){fail.push('час і ДЗ')}
  for(const k of ['presentation','notes']){
   const src=res[k+'_path'];if(!src)continue;
   try{changes[k+'_path']=await transfer('lesson-library',src,'lessons',`${sid}/${lid}/${k}_${ext(src)}`);changes[k+'_name']=res[k+'_name']||ext(src)}
