@@ -36,7 +36,8 @@
   function badge(uid) {
     if (!uid || (S.profile && uid === S.profile.id)) return '';
     const r = st.map.get(uid);
-    if (!r) return '';
+    if (!r) return st.at ? '<span class="ms31-st">ще не заходив(ла)</span>' : '';
+    if (r.hidden || !r.last_seen) return '';
     return r.online ? '<span class="ms31-st on">онлайн</span>'
                     : `<span class="ms31-st">${when(r.last_seen)}</span>`;
   }
