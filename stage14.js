@@ -7,6 +7,34 @@
   const link = tok => location.origin + location.pathname + '#/test/' + tok;
   const staffNow = () => S.profile && S.profile.role !== 'student';
 
+  /* ---------- малюнки до завдань (публічний бакет library-test-images, див. 28_library_parity.sql) ---------- */
+  const IMG_BUCKET = 'library-test-images';
+  const IMG_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  const imgUrl = p => sb.storage.from(IMG_BUCKET).getPublicUrl(p).data.publicUrl;
+  const imgTag = p => p ? `<img class="qimg" src="${esc(imgUrl(p))}" alt="Малюнок до завдання">` : '';
+  function checkImg(file) {
+    if (!IMG_TYPES.includes(file.type)) throw new Error('Фото має бути JPG, PNG або WEBP');
+    if (file.size > 15 * 1024 * 1024) throw new Error('Фото більше за 15 МБ');
+  }
+  async function uploadImg(file, tid) {
+    checkImg(file);
+    const blob = await resizeToJpeg(file, 1600);
+    const path = `${S.profile.id}/${tid}/q-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+    const up = await sb.storage.from(IMG_BUCKET).upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+    if (up.error) throw up.error;
+    return path;
+  }
+  const rmImg = p => p ? sb.storage.from(IMG_BUCKET).remove([p]).catch(() => {}) : null;
+  const imgCtl = (q, tid) => `<form data-form="libimg" data-qid="${q.id}" data-tid="${tid}" data-old="${esc(q.image_path || '')}" class="flex" style="margin-top:8px">
+    <input type="file" accept="image/jpeg,image/png,image/webp" required style="flex:1;min-width:200px;max-width:340px">
+    <button class="btn small secondary">${q.image_path ? 'Замінити малюнок' : 'Додати малюнок'}</button>
+    ${q.image_path ? `<button type="button" class="btn small danger" data-act="libimgrm" data-qid="${q.id}" data-old="${esc(q.image_path)}">Прибрати</button>` : ''}</form>`;
+  const pubImg = (list, q, i) => {
+    const a = Array.isArray(list) ? list : [];
+    const hit = q.id !== undefined ? a.find(x => x.id === q.id) : a[i];
+    return imgTag(hit && hit.image_path);
+  };
+
   const css = document.createElement('style');
   css.textContent = `#pub-ov{position:fixed;inset:0;z-index:200;background:#f7f5fc;overflow:auto}
 .pub-in{max-width:760px;margin:0 auto;padding:20px 16px 60px}
@@ -71,6 +99,7 @@
     <div class="field"><label>Варіанти (кожен з нового рядка)</label><textarea name="options" rows="3">${esc(Array.isArray(q.options) ? q.options.join('\n') : '')}</textarea></div>
     <div class="field"><label>Правильна відповідь (один варіант: номер; кілька: 1,3; правда/неправда: так або ні; коротка: відповідь | інша відповідь)</label><input name="correct" value="${esc(ai && q.type !== 'matching' ? cstr(q) : '')}"></div>
     <div class="field"><label>Пояснення</label><input name="expl" maxlength="2000" value="${esc(q.explanation || '')}"></div>
+    <div class="field"><label>Фото до завдання (необов’язково: JPG, PNG або WEBP)</label><input type="file" name="qphoto" accept="image/jpeg,image/png,image/webp"></div>
     <div class="flex"><button class="btn small">${ai ? 'Додати в тест' : 'Додати завдання'}</button>${ai ? `<button type="button" class="btn small secondary" data-act="libaidrop" data-id="${q.id}">Відкинути</button>` : ''}</div></form>`;
 
   const fmtCorrect = q => {
@@ -121,9 +150,9 @@
 
     const qlist = qs.data.map((q, i) => `<div class="lib-q"><div class="flex"><b>${i + 1}.</b><span class="pill blue">${esc(QT[q.qtype] || q.qtype)}</span><span class="pill">${q.points} б.</span>
       <button class="btn small danger" data-act="libdelq" data-id="${q.id}" style="margin-left:auto">Видалити</button></div>
-      <div style="white-space:pre-wrap;margin:6px 0">${esc(q.prompt)}</div>
+      <div style="white-space:pre-wrap;margin:6px 0">${esc(q.prompt)}</div>${imgTag(q.image_path)}
       ${q.qtype === 'matching' ? MSMatch.columns(q.options) : q.options ? `<div class="muted small">${q.options.map((o, k) => (k + 1) + '. ' + esc(o)).join('<br>')}</div>` : ''}
-      <div class="small"><b>Правильно:</b> ${esc(fmtCorrect(q))}</div></div>`).join('') || '<div class="empty">Завдань ще немає.</div>';
+      <div class="small"><b>Правильно:</b> ${esc(fmtCorrect(q))}</div>${imgCtl(q, id)}</div>`).join('') || '<div class="empty">Завдань ще немає.</div>';
 
     const ai = S.libAi && S.libAi.tid === id ? S.libAi.items : [];
     const aiCard = `<div class="card"><h2>Завдання з фото (ШІ)</h2>
@@ -138,7 +167,7 @@
       const open = S.libOpen === a.id, det = a.details || {}, ans = a.answers || {};
       const body = open ? `<div style="margin-top:10px">${qs.data.map((q, i) => {
         const d = det[q.id], mark = q.qtype === 'long' ? '⏳' : (d === true || d?.correct === true) ? '✅' : (d?.points > 0 ? '🟡' : '❌');
-        return `<div class="lib-q"><b>${i + 1}. ${mark}</b>${q.qtype === 'matching' ? `<span class="pill">${d?.points ?? 0} / ${q.points} б.</span>` : ''}<div style="white-space:pre-wrap;margin:4px 0">${esc(q.prompt)}</div>
+        return `<div class="lib-q"><b>${i + 1}. ${mark}</b>${q.qtype === 'matching' ? `<span class="pill">${d?.points ?? 0} / ${q.points} б.</span>` : ''}<div style="white-space:pre-wrap;margin:4px 0">${esc(q.prompt)}</div>${imgTag(q.image_path)}
           <div class="notice" style="white-space:pre-wrap"><b>Відповідь:</b> ${esc(fmtAns(q, ans[q.id]))}</div>
           ${q.qtype === 'long' ? '' : `<div class="muted small">Правильно: ${esc(fmtCorrect(q))}</div>`}</div>`;
       }).join('')}
@@ -196,8 +225,11 @@
   };
   A.libdel = async function (el) {
     if (!confirm('Видалити тест разом із завданнями та результатами? Посилання перестане працювати.')) return;
+    const imgs = await sb.from('library_questions').select('image_path').eq('test_id', el.dataset.id);
     const { error } = await sb.from('library_tests').delete().eq('id', el.dataset.id);
     if (error) throw error;
+    const paths = ((imgs.data) || []).map(x => x.image_path).filter(Boolean);
+    if (paths.length) await sb.storage.from(IMG_BUCKET).remove(paths).catch(() => {});
     toast('Тест видалено'); location.hash = '#/t/library';
   };
   A.libcopy = async function (el) {
@@ -214,17 +246,41 @@
   F.libaddq = async function (f) {
     let row;
     try { row = parseQ(f); } catch (e) { throw new Error('Завдання: ' + e.message); }
+    const ph = f.querySelector('input[name="qphoto"]'), file = ph && ph.files && ph.files[0];
+    if (file) checkImg(file);                       // помилка ДО збереження
     row.test_id = f.dataset.tid; row.sort_order = await nextOrder(f.dataset.tid);
+    if (file) row.image_path = await uploadImg(file, f.dataset.tid);
     const { error } = await sb.from('library_questions').insert(row);
-    if (error) throw error;
+    if (error) { if (row.image_path) await rmImg(row.image_path); throw error; }
     if (f.dataset.ai && S.libAi) S.libAi.items = S.libAi.items.filter(q => q.id !== f.dataset.ai);
     toast('Завдання додано'); renderApp();
   };
   A.libdelq = async function (el) {
     if (!confirm('Видалити завдання?')) return;
+    const old = await sb.from('library_questions').select('image_path').eq('id', el.dataset.id).maybeSingle();
     const { error } = await sb.from('library_questions').delete().eq('id', el.dataset.id);
     if (error) throw error;
+    if (old.data && old.data.image_path) await rmImg(old.data.image_path);
     renderApp();
+  };
+  F.libimg = async function (f) {
+    const file = f.querySelector('input[type=file]').files[0];
+    if (!file) throw new Error('Оберіть файл');
+    const path = await uploadImg(file, f.dataset.tid);
+    const { data, error } = await sb.from('library_questions').update({ image_path: path }).eq('id', f.dataset.qid).select('id');
+    if (error || !data || !data.length) {
+      await rmImg(path);
+      throw error || new Error('Не вдалося зберегти малюнок. Виконайте 28_library_parity.sql.');
+    }
+    await rmImg(f.dataset.old);
+    toast('Малюнок збережено'); renderApp();
+  };
+  A.libimgrm = async function (el) {
+    const { data, error } = await sb.from('library_questions').update({ image_path: null }).eq('id', el.dataset.qid).select('id');
+    if (error) throw error;
+    if (!data || !data.length) throw new Error('Не вдалося прибрати малюнок.');
+    await rmImg(el.dataset.old);
+    toast('Малюнок прибрано'); renderApp();
   };
   A.libaidrop = function (el) {
     if (S.libAi) S.libAi.items = S.libAi.items.filter(q => q.id !== el.dataset.id);
@@ -238,12 +294,18 @@
     el.dataset.busy = '1'; el.disabled = true;
     const tid = el.dataset.tid, ok = [], bad = [], rows = [];
     let ord = await nextOrder(tid);
-    forms.forEach((f, i) => {
-      try { const r = parseQ(f); r.test_id = tid; r.sort_order = ord++; rows.push(r); ok.push(f.dataset.ai); }
-      catch (e) { bad.push('№' + (i + 1) + ': ' + e.message); }
-    });
+    const uploaded = [];
+    for (let i = 0; i < forms.length; i++) {
+      const f = forms[i];
+      try {
+        const r = parseQ(f);
+        const ph = f.querySelector('input[name="qphoto"]'), file = ph && ph.files && ph.files[0];
+        if (file) { r.image_path = await uploadImg(file, tid); uploaded.push(r.image_path); }
+        r.test_id = tid; r.sort_order = ord++; rows.push(r); ok.push(f.dataset.ai);
+      } catch (e) { bad.push('№' + (i + 1) + ': ' + e.message); }
+    }
     try {
-      if (rows.length) { const { error } = await sb.from('library_questions').insert(rows); if (error) throw error; }
+      if (rows.length) { const { error } = await sb.from('library_questions').insert(rows); if (error) { await Promise.all(uploaded.map(rmImg)); throw error; } }
       if (S.libAi) S.libAi.items = S.libAi.items.filter(q => !ok.includes(q.id));
       toast(bad.length ? `Додано: ${rows.length}. Не додано: ${bad.length} (${bad.join('; ')})` : `Додано завдань: ${rows.length}`, !!bad.length);
     } finally { renderApp(); }
@@ -314,6 +376,7 @@
     const r = await sb.rpc('get_public_test', { p_token: token });
     if (r.error) { root.innerHTML = shell(`<div class="card"><h2>Тест недоступний</h2><p>${esc(r.error.message)}</p></div>`); return; }
     test = r.data;
+    try { const im = await sb.rpc('get_public_test_images', { p_token: token }); test.images = im.error ? [] : (im.data || []); } catch (e) { test.images = []; }
     const s = load();
     if (s && s.aid) quiz(s); else nameScreen();
   }
@@ -375,7 +438,7 @@
       else if (q.qtype === 'short') inp = '<input type="text" maxlength="500" placeholder="Ваша відповідь">';
       else inp = '<textarea rows="5" maxlength="8000" placeholder="Ваш розв’язок"></textarea>';
       return `<div class="card" data-pq="${q.id}" data-t="${q.qtype}"><div class="flex"><b>${i + 1}.</b><span class="pill blue">${q.points} б.</span></div>
-        <p style="white-space:pre-wrap;font-size:1.15rem">${esc(q.prompt)}</p>${inp}</div>`;
+        <p style="white-space:pre-wrap;font-size:1.15rem">${esc(q.prompt)}</p>${pubImg(test.images, q, i)}${inp}</div>`;
     };
     root.innerHTML = shell(`${st.deadline ? '<div class="card pub-timer"><b>Залишилось: <span id="pub-timer">…</span></b></div>' : ''}
       <h2 style="margin:6px 0 12px">${esc(test.title)}</h2><p class="muted">${esc(st.name || '')}</p>
@@ -442,10 +505,12 @@
     const r = await sb.rpc('get_public_attempt', { p_attempt: id });
     if (r.error) { root.innerHTML = shell(`<div class="card"><h2>Спроба недоступна</h2><p>${esc(r.error.message)}</p></div>`); return; }
     const d = r.data, L = attLink(id);
+    let imgs = [];
+    try { const im = await sb.rpc('get_public_attempt_images', { p_attempt: id }); if (!im.error) imgs = im.data || []; } catch (e) { /* без малюнків */ }
     const cards = d.questions.map((q, i) => {
       const mark = q.qtype === 'long' ? '📝' : (q.ok === true || q.ok?.correct === true) ? '✅' : (q.ok?.points > 0 ? '🟡' : '❌');
       return `<div class="card"><div class="flex"><b>${i + 1}. ${mark}</b><span class="pill">${q.qtype === 'matching' ? `${q.ok?.points ?? 0} / ` : ''}${q.points} б.</span></div>
-        <p style="white-space:pre-wrap;font-size:1.1rem">${esc(q.prompt)}</p>
+        <p style="white-space:pre-wrap;font-size:1.1rem">${esc(q.prompt)}</p>${pubImg(imgs, q, i)}
         <div class="notice" style="white-space:pre-wrap"><b>Моя відповідь:</b> ${esc(fmtAns(q, q.answer))}</div>
         ${d.show_answers && q.qtype !== 'long' && q.correct !== null && q.correct !== undefined ? `<div class="muted small"><b>Правильна відповідь:</b> ${esc(fmtCorrect(q))}</div>` : ''}
         ${d.show_answers && q.explanation ? `<div class="muted small" style="white-space:pre-wrap">${esc(q.explanation)}</div>` : ''}</div>`;
