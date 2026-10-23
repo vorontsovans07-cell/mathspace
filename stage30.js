@@ -64,8 +64,9 @@
     if(!files.length||files.length>5) throw new Error('Додайте від 1 до 5 фото.');
     const images=[];
     for(const file of files){
-      if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>4500000) throw new Error('Фото має бути JPG, PNG або WEBP, до 4,5 МБ кожне.');
-      images.push({mime:file.type,data:await b64(file)});
+      if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>15*1024*1024) throw new Error('Фото має бути JPG, PNG або WEBP, до 15 МБ кожне.');
+      const small=typeof resizeToJpeg==='function'?await resizeToJpeg(file,1600):file;
+      images.push({mime:small.type||'image/jpeg',data:await b64(small)});
     }
     if(typeof toast==='function') toast('Розпізнаємо фото…');
     const r=await sb.functions.invoke('generate-questions',{body:{images}});

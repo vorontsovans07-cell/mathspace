@@ -5,7 +5,7 @@
 (function () {
   'use strict';
   const TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
-  const SELECTOR = 'form[data-form="aigen"],form[data-form="libaigen"],form[data-form="hwai"],form[data-form="lt181ai"]';
+  const SELECTOR = 'form[data-form="aigen"],form[data-form="libaigen"],form[data-form="hwai"],form[data-form="lt181ai"],form[data-form="lt181hwai"]';
   const MAX = 5;
   const SIZE = 4_500_000; // compatible with current homework/library limits
   const state = new WeakMap();

@@ -1,4 +1,3 @@
-
 /* MathSpace Stage 27 — teacher homework review queue + mobile bottom-nav fix.
    Add <script src="stage27.js"></script> after stage26.js in index.html. */
 (function () {
@@ -140,6 +139,25 @@ TAB.homeworkreview = async function () {
     </div>`;
   }
 
+  // вправи й розв'язання цих уроків (розв'язання бачить лише персонал)
+  const lids = [...new Set(visible.map(s => String(s.lesson_id)))];
+  const [hwRes, solRes] = await Promise.all([
+    sb.from('lesson_homework').select('lesson_id,exercises').in('lesson_id', lids),
+    sb.from('lesson_homework_solutions').select('lesson_id,solutions').in('lesson_id', lids)
+  ]);
+  const hwBy = new Map((hwRes.data || []).map(r => [String(r.lesson_id), Array.isArray(r.exercises) ? r.exercises : []]));
+  const solBy = new Map((solRes.error ? [] : (solRes.data || [])).map(r => [String(r.lesson_id), r.solutions || {}]));
+  const exBlock = lid => {
+    const ex = hwBy.get(String(lid)) || [];
+    if (!ex.length) return '';
+    const sols = solBy.get(String(lid)) || {};
+    return `<div class="ms-review-ex"><b>Завдання й розв’язання</b> <span class="muted small">(бачите лише ви; натисніть на вправу)</span>${ex.map((x, i) => {
+      const t = esc(String((x && (x.text || x.prompt)) || ''));
+      const s = x && x.id ? String(sols[x.id] || '') : '';
+      return `<details class="hw-sol"><summary><b>${i + 1}.</b> <span class="hw-sol-q">${t}</span></summary><div class="hw-sol-body"><div class="hw-sol-text" data-empty="Розв’язання не додано.">${esc(s)}</div></div></details>`;
+    }).join('')}</div>`;
+  };
+
   const cards = [];
   for (const sub of visible) {
     const lesson = lessonById.get(String(sub.lesson_id));
@@ -154,6 +172,7 @@ TAB.homeworkreview = async function () {
       <p><b>Учень:</b> ${esc(studentName)}</p>
       <p class="muted small">Надіслано: ${sub.submitted_at ? new Date(sub.submitted_at).toLocaleString('uk-UA') : 'Дата невідома'}</p>
       <div><b>Фото виконаної роботи</b>${photos}</div>
+      ${exBlock(sub.lesson_id)}
       <div class="field">
         <label>Коментар учню (необов’язково)</label>
         <textarea name="ms-review-feedback" rows="2" maxlength="3000" placeholder="Наприклад, що потрібно виправити…">${esc(sub.teacher_feedback || '')}</textarea>

@@ -11,8 +11,8 @@
 
   /* ===== Де вмикати ===== */
   var TEST_FIELDS = 'form[data-form="attempt"] [data-q], [data-pq]';        // тести учнів
-  var EDIT_FORMS = 'form[data-form*="addq"], form[data-form*="editq"]';     // редактор завдань викладача
-  var LATEX_NAMES = { prompt: 1, options: 1, expl: 1 };                      // поля з формулами KaTeX
+  var EDIT_FORMS = 'form[data-form*="addq"], form[data-form*="editq"], form[data-form="lt181question"], form[data-form="hwadd"], form[data-form="lt181hwadd"], form[data-form="lt181hwtext"], form[data-form="ms23import"], form[data-form="hwsol"], form[data-form="lt181hwsol"]';     // редактор завдань викладача
+  var LATEX_NAMES = { prompt: 1, options: 1, expl: 1, explanation: 1, left: 1, right: 1, match_left: 1, match_right: 1, exercise: 1, source: 1, solution: 1 };                      // поля з формулами KaTeX
   var ANSWER_NAMES = { correct: 1 };                                         // поле правильної відповіді
   // Щоб вимкнути для якогось поля чи блоку, додайте йому атрибут data-no-math
 

@@ -38,8 +38,10 @@ async function createTemplate(lid){
  try{
   const lm=await sb.from('lessons').select('time_limit_minutes').eq('id',lid).maybeSingle();
   const hw=await sb.from('lesson_homework').select('instructions,exercises').eq('lesson_id',lid).maybeSingle();
+  const sr=await sb.from('lesson_homework_solutions').select('solutions').eq('lesson_id',lid).maybeSingle();
+  const sol=(sr.data&&sr.data.solutions)||{};
   const extra={time_limit_minutes:(lm.data&&lm.data.time_limit_minutes)||null,
-   homework:hw.data?{instructions:hw.data.instructions||'',exercises:Array.isArray(hw.data.exercises)?hw.data.exercises:[]}:null};
+   homework:hw.data?{instructions:hw.data.instructions||'',exercises:(Array.isArray(hw.data.exercises)?hw.data.exercises:[]).map(x=>({text:x.text||x.prompt||'',options:Array.isArray(x.options)?x.options:[],solution:String((x.id&&sol[x.id])||'')}))}:null};
   if(extra.time_limit_minutes||(extra.homework&&(extra.homework.instructions||extra.homework.exercises.length))){
    const u=await sb.from('lesson_templates').update(extra).eq('id',t);
    if(u.error)errors.push('час і ДЗ'+(/column|schema cache/i.test(u.error.message)?': виконайте 28_library_parity.sql':': '+u.error.message));
@@ -58,8 +60,15 @@ async function assignTemplate(tid,sid){
    const hw=tp.data.homework;
    if(hw&&((hw.instructions&&String(hw.instructions).trim())||(Array.isArray(hw.exercises)&&hw.exercises.length))){
     // ДЗ лишається прихованим, доки викладач його не опублікує
-    const i=await sb.from('lesson_homework').insert({lesson_id:lid,instructions:String(hw.instructions||''),exercises:Array.isArray(hw.exercises)?hw.exercises:[],published:false,updated_at:new Date().toISOString()});
+    const src=Array.isArray(hw.exercises)?hw.exercises:[];
+    const used=new Set(),mkId=()=>{let v;do{v=crypto.randomUUID().replace(/-/g,'').slice(0,10)}while(used.has(v));used.add(v);return v};
+    const exs=src.map(x=>({id:mkId(),text:String(x.text||x.prompt||''),options:Array.isArray(x.options)?x.options:[],solution:String(x.solution||'')}));
+    const i=await sb.from('lesson_homework').insert({lesson_id:lid,instructions:String(hw.instructions||''),exercises:exs.map(({id,text,options})=>({id,text,options})),published:false,updated_at:new Date().toISOString()});
     if(i.error)fail.push('домашнє завдання: '+i.error.message);
+    else{
+     const map={};exs.forEach(x=>{if(x.solution)map[x.id]=x.solution});
+     if(Object.keys(map).length){const s2=await sb.from('lesson_homework_solutions').upsert({lesson_id:lid,solutions:map,updated_at:new Date().toISOString()},{onConflict:'lesson_id'});if(s2.error)fail.push('розв’язання ДЗ'+(/relation|schema cache|find the table/i.test(s2.error.message)?': виконайте 29_homework_solutions.sql':': '+s2.error.message));}
+    }
    }
   }
  }catch(e){fail.push('час і ДЗ')}
