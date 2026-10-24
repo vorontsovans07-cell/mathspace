@@ -38,10 +38,12 @@
       try {
         const ids = cards.map(c => c.getAttribute('data-q'));
         const [qr, kr] = await Promise.all([
-          sb.from('questions').select('id,qtype,options,explanation').eq('lesson_id', lid),
+          sb.from('questions').select('*').eq('lesson_id', lid),
           sb.from('question_keys').select('*').in('question_id', ids)]);
-        if (!qr.error && !kr.error) {
+        if (qr.error || kr.error) throw (qr.error || kr.error);
+        {
           const qmap = Object.fromEntries(qr.data.map(x => [x.id, x]));
+          const krow = Object.fromEntries(kr.data.map(x => [x.question_id, x]));
           const kmap = Object.fromEntries(kr.data.map(x => [x.question_id, x.correct]));
           cards.forEach(card => {
             const q = qmap[card.getAttribute('data-q')];
@@ -61,14 +63,21 @@
             } else {
               body = '<div class="muted small">Розгорнуту відповідь перевіряє викладач вручну</div>';
             }
-            if (q.explanation) body += `<div class="muted small" style="margin-top:6px">Пояснення: ${escHtml(q.explanation)}</div>`;
+            const expl = q.explanation || (krow[q.id] && krow[q.id].explanation);
+            if (expl) body += `<div class="muted small" style="margin-top:6px">Пояснення: ${escHtml(expl)}</div>`;
             const box = doc.createElement('div');
             box.className = 'notice ms34-ans';
             box.innerHTML = '<b class="small">Відповідь (бачите лише ви)</b>' + body;
             card.appendChild(box);
           });
         }
-      } catch (e) { /* без відповідей, якщо не вдалося */ }
+      } catch (e) {
+        const w = doc.createElement('div');
+        w.className = 'notice warn small';
+        w.textContent = 'Не вдалося завантажити правильні відповіді: ' + (e && e.message ? e.message : e);
+        root.insertBefore(w, root.firstChild);
+        console.warn('MathSpace Stage 34 answers:', e);
+      }
     }
     const exs = [...root.querySelectorAll('.hw-exercise')];
     if (exs.length && window.__msHw) {
@@ -86,7 +95,13 @@
           d.querySelector('.hw-sol-text').textContent = String((x.id && sols[x.id]) || '');
           el.appendChild(d);
         });
-      } catch (e) { /* без розв'язань */ }
+      } catch (e) {
+        const w = doc.createElement('div');
+        w.className = 'notice warn small';
+        w.textContent = 'Не вдалося завантажити розв’язання ДЗ: ' + (e && e.message ? e.message : e);
+        root.insertBefore(w, root.firstChild);
+        console.warn('MathSpace Stage 34 solutions:', e);
+      }
     }
   }
 
