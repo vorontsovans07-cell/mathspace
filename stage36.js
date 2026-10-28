@@ -1,6 +1,6 @@
 /* MathSpace Stage 36 — in the teacher's test results show ALL answer options:
    the student's choice and the correct answer are marked inside the full list.
-   Works for single choice, multiple choice and true/false in library tests ("Результати"). No SQL.
+   Works for single choice, multiple choice, true/false and matching in library tests ("Результати"). No SQL.
    Load LAST (after stage35.js). */
 (function () {
   'use strict';
@@ -42,6 +42,23 @@
 
   function listHtml(q, v) {
     const type = q.qtype, c = q.correct;
+    if (type === 'matching') {
+      const o = q.options;
+      if (!o || !Array.isArray(o.left) || !Array.isArray(o.right)) return null;
+      const L = 'АБВГДЕЄЖЗИ';
+      const sv = Array.isArray(v) ? v : [], cc = Array.isArray(c) ? c : [];
+      const nm = j => j === -1 ? 'немає відповідності' : (Number.isInteger(j) && o.right[j] !== undefined ? (L[j] || (j + 1)) + '. ' + esc(o.right[j]) : '—');
+      const cols = typeof MSMatch !== 'undefined' && MSMatch.columns ? MSMatch.columns(o) : '';
+      const rows = o.left.map((t, i) => {
+        const has = sv[i] !== undefined && sv[i] !== null;
+        const ok = has && sv[i] === cc[i];
+        const cls = ok ? 'ok pick' : (has ? 'bad pick' : '');
+        const mine = has ? nm(sv[i]) : 'без відповіді';
+        const tail = ok ? '<span class="ms36-tag">правильно</span>' : `<span class="ms36-tag">правильно: ${nm(cc[i])}</span>`;
+        return `<div class="ms36-opt ${cls}">${ok ? '✅' : '❌'} ${i + 1}. ${esc(t)} → <b>${mine}</b>${tail}</div>`;
+      }).join('');
+      return `<div class="ms36-list">${cols}<b class="small">Відповідь учня по пунктах</b>${rows}</div>`;
+    }
     let opts;
     if (type === 'truefalse') opts = ['Правда', 'Неправда'];
     else if (type === 'single' || type === 'multiple') opts = Array.isArray(q.options) ? q.options : null;
