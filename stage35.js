@@ -7,7 +7,7 @@
   const css = document.createElement('style');
   css.id = 'ms35-style';
   css.textContent = `
-  :root { --ms-math: 1.12em; --ms-math-small: 1.06em; --ms-text: 1.4rem; --ms-text-small: 1.25rem; }  /* SIZE: text of tasks, options, homework */            /* SIZE: formulas (computer / phone) */
+  :root { --ms-math: 1.12em; --ms-math-small: 1.06em; }            /* SIZE: formulas (computer / phone) */
   .katex { font-size: var(--ms-math) !important; }
   .katex .mfrac { font-size: 1.22em; }                          /* SIZE: extra boost for fractions only */
   .katex-display > .katex { font-size: calc(var(--ms-math) * 1.1) !important; }
@@ -16,12 +16,7 @@
   .hw-tex, .hw-sol-text, .hw-sol-q, .hw-options, [data-q] p, [data-q] .opt, .opt, .notice, .ms34-ans, .small {
     line-height: 2; }
   .hw-tex, .hw-sol-text { overflow-wrap: anywhere; }
-  /* text of tasks, answer options, homework and test results (formulas follow it, they are in em) */
-  [data-q] p, [data-q] .opt, .opt, .hw-tex, .hw-sol-q, .hw-sol-text, .hw-options,
-  .lib-q, .lib-q .notice, .ms36-opt, .ms34-ans, .card > p[style*="font-size:1.1rem"] {
-    font-size: var(--ms-text) !important; line-height: 1.9 !important; }
-  .lib-q .muted.small, .ms36-tag { font-size: calc(var(--ms-text) * .75) !important; }
-  @media (max-width: 560px) { :root { --ms-math: var(--ms-math-small); --ms-text: var(--ms-text-small); } }
+  @media (max-width: 560px) { :root { --ms-math: var(--ms-math-small); } }
   `;
   document.head.appendChild(css);
 })();
