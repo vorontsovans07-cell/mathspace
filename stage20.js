@@ -25,7 +25,7 @@
     if (!heading) return null;
     const name = (heading.textContent || '').replace(/\s+/g,' ').trim().toLocaleLowerCase('uk');
     if (name.startsWith('домашнє завдання')) return 'homework';
-    if (/^(завдання тесту|додати завдання|тест із фото|завдання з фото|вставити тест текстом)/.test(name)) return 'test';
+    if (/^(завдання тесту|додати завдання|тест із фото|завдання з фото|вставити тест текстом|час на тест)/.test(name)) return 'test';
     // Підтримка наступних версій, де назви інструментів трохи змінені.
     if (card.querySelector('form[data-form="aigen"],form[data-form="addq"],form[data-form="textimport"]')) return 'test';
     if (card.querySelector('form[data-form="hwsettings"],form[data-form="hwadd"],form[data-form="hwai"],form[data-form="hwcopy"]')) return 'homework';
