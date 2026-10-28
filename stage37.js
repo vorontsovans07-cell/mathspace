@@ -7,7 +7,7 @@
   window.__ms37 = true;
   if (typeof S === 'undefined') { console.error('MathSpace Stage 37: S not available.'); return; }
 
-  const GAP_MS = 0 * 60 * 1000;      // як часто показувати (хвилин * 60 * 1000)
+  const GAP_MS = 120 * 60 * 1000;      // як часто показувати (хвилин * 60 * 1000)
   const SHOW_MS = 12000;              // скільки секунд висить фраза
 
   const STUDENT = [
