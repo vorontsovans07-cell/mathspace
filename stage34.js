@@ -328,6 +328,108 @@
     return back + `<div class="card"><h2>Спроба від ${escHtml(when(t.created_at))}</h2><span class="pill ${done ? 'green' : 'amber'}">${sc} / ${t.max_score}${done ? '' : ' · чекає перевірки'}</span></div>` + cards;
   }
 
+
+  /* ---------- взяти тест із бібліотеки тестів і додати в цей урок ---------- */
+  const modalCss = document.createElement('style');
+  modalCss.textContent = `#ms34-ov{position:fixed;inset:0;z-index:9990;background:rgba(20,15,40,.5);display:flex;align-items:center;justify-content:center;padding:12px}
+  .ms34-modal{background:#fff;border-radius:16px;width:min(620px,100%);max-height:90vh;overflow:auto;padding:18px}
+  .ms34-modal h3{margin:0 0 6px;display:flex;justify-content:space-between;align-items:center}
+  .ms34-x{border:0;background:none;font-size:26px;cursor:pointer;line-height:1}`;
+  document.head.appendChild(modalCss);
+  let libCtx = null;
+  const closeLib = () => { const o = document.getElementById('ms34-ov'); if (o) o.remove(); };
+
+  A.ms34lib = async function (el) {
+    libCtx = { lid: el.dataset.lid, sid: el.dataset.sid };
+    const r = await sb.from('library_tests')
+      .select('id,title,description,time_limit_minutes,library_questions(count)').order('created_at', { ascending: false });
+    if (r.error) throw r.error;
+    closeLib();
+    const rows = r.data.map(t => {
+      const n = t.library_questions && t.library_questions[0] ? t.library_questions[0].count : 0;
+      return `<div class="row" data-ms34-t="${escHtml(((t.title || '') + ' ' + (t.description || '')).toLowerCase())}"><span><b>${escHtml(t.title)}</b><br><span class="muted small">Завдань: ${n}${t.time_limit_minutes ? ' · ' + t.time_limit_minutes + ' хв' : ''}</span></span>`
+        + `<div class="end"><button type="button" class="btn small" data-act="ms34libpick" data-id="${escHtml(t.id)}"${n ? '' : ' disabled'}>Додати в урок</button></div></div>`;
+    }).join('') || '<div class="empty">У бібліотеці ще немає тестів.</div>';
+    const o = document.createElement('div');
+    o.id = 'ms34-ov';
+    o.innerHTML = `<div class="ms34-modal"><h3>Тест із бібліотеки <button type="button" class="ms34-x" data-act="ms34libclose" aria-label="Закрити">×</button></h3>`
+      + `<p class="muted small">Завдання обраного тесту будуть додані в кінець цього уроку. Інші завдання урока не змінюються.</p>`
+      + `<input type="search" id="ms34-libq" placeholder="Пошук за назвою…" autocomplete="off" style="width:100%;margin:8px 0">`
+      + `<div id="ms34-liblist">${rows}</div></div>`;
+    o.addEventListener('click', e => { if (e.target === o) closeLib(); });
+    document.body.appendChild(o);
+    o.querySelector('#ms34-libq').addEventListener('input', e => {
+      const q = e.target.value.trim().toLowerCase();
+      o.querySelectorAll('[data-ms34-t]').forEach(row => { row.hidden = q && !row.dataset.ms34T.includes(q); });
+    });
+  };
+  A.ms34libclose = async function () { closeLib(); };
+
+  A.ms34libpick = async function (el) {
+    if (!libCtx) return;
+    const { lid, sid } = libCtx, tid = el.dataset.id;
+    const [t, qs, les] = await Promise.all([
+      sb.from('library_tests').select('title,time_limit_minutes').eq('id', tid).single(),
+      sb.from('library_questions').select('*').eq('test_id', tid).order('sort_order').order('created_at'),
+      sb.from('lessons').select('time_limit_minutes').eq('id', lid).single()]);
+    if (t.error) throw t.error;
+    if (qs.error) throw qs.error;
+    if (!qs.data.length) throw new Error('У цьому тесті немає завдань.');
+    if (!confirm(`Додати в урок завдання з тесту «${t.data.title}» (${qs.data.length})?`)) return;
+    document.querySelectorAll('#ms34-ov button').forEach(b => { b.disabled = true; });
+    const before = await sb.from('questions').select('id').eq('lesson_id', lid);
+    if (before.error) throw before.error;
+    const had = new Set(before.data.map(x => x.id));
+    const rollback = async () => {
+      const now = await sb.from('questions').select('id').eq('lesson_id', lid);
+      const fresh = (now.data || []).map(x => x.id).filter(id => !had.has(id));
+      if (fresh.length) await sb.from('questions').delete().in('id', fresh);
+    };
+    try {
+      for (const q of qs.data) {
+        const { error } = await sb.rpc('save_question', {
+          p_lesson: lid, p_id: null, p_type: q.qtype, p_prompt: q.prompt, p_options: q.options ?? null,
+          p_correct: q.correct === undefined ? null : q.correct, p_points: Number(q.points) || 1, p_explanation: q.explanation || '' });
+        if (error) throw error;
+      }
+    } catch (e) { await rollback(); throw e; }
+
+    // малюнки: з публічного бакета бібліотеки в приватний бакет уроків
+    let imgWarn = 0;
+    if (qs.data.some(q => q.image_path)) {
+      const after = await sb.from('questions').select('id,sort_order').eq('lesson_id', lid).order('sort_order');
+      const fresh = (after.data || []).filter(x => !had.has(x.id));
+      for (let i = 0; i < qs.data.length; i++) {
+        const src = qs.data[i].image_path;
+        if (!src || !fresh[i]) continue;
+        let dst = null;
+        try {
+          const dl = await sb.storage.from('library-test-images').download(src);
+          if (dl.error) throw dl.error;
+          dst = `${sid}/${lid}/q-${Date.now()}-${i}.jpg`;
+          const up = await sb.storage.from('lessons').upload(dst, dl.data, { contentType: dl.data.type || 'image/jpeg', upsert: false });
+          if (up.error) throw up.error;
+          const r = await sb.rpc('set_question_image', { p_question: fresh[i].id, p_path: dst });
+          if (r.error) throw r.error;
+        } catch (e) {
+          imgWarn++;
+          if (dst) { try { await sb.storage.from('lessons').remove([dst]); } catch (x) { /* ignore */ } }
+        }
+      }
+    }
+    // ліміт часу, якщо в уроці його ще не було
+    let limitSet = false;
+    if (t.data.time_limit_minutes && !(les.data && les.data.time_limit_minutes)) {
+      const u = await sb.from('lessons').update({ time_limit_minutes: t.data.time_limit_minutes }).eq('id', lid);
+      limitSet = !u.error;
+    }
+    closeLib();
+    say(`Додано завдань: ${qs.data.length}${limitSet ? `, встановлено ліміт часу ${t.data.time_limit_minutes} хв` : ''}${imgWarn ? `. Малюнків не скопійовано: ${imgWarn}` : ''}`, !!imgWarn);
+    renderApp();
+  };
+
+  const fromLib = (sid, lid, small) => `<button type="button" class="btn secondary${small ? ' small' : ''}" data-act="ms34lib" data-lid="${escHtml(lid)}" data-sid="${escHtml(sid)}">📥 Додати тест із бібліотеки</button>`;
+
   const libBtn = lid => `<button type="button" class="btn secondary" data-act="ms34tolib" data-lid="${escHtml(lid)}">📚 Додати тест у бібліотеку</button>`;
 
   /* ---------- сторінка уроку ---------- */
@@ -338,7 +440,7 @@
     if (editing === lid) {
       const page = await baseStaff.apply(this, arguments);
       if (typeof page !== 'string') return page;
-      return `<div class="card flex"><button type="button" class="btn secondary small" data-act="ms34preview">👁 Переглянути як учень</button>${libBtn(lid).replace('class="btn secondary"', 'class="btn secondary small"')}</div>` + page;
+      return `<div class="card flex"><button type="button" class="btn secondary small" data-act="ms34preview">👁 Переглянути як учень</button>${libBtn(lid).replace('class="btn secondary"', 'class="btn secondary small"')}${fromLib(sid, lid, true)}</div>` + page;
     }
 
     let html = await window.studentLesson(lid);
@@ -439,7 +541,7 @@
     const top = demo
       ? `<div class="notice small">▶ Пробний режим: так учень проходить тест. Відповіді нічого не змінюють і не зберігаються.${limit ? ` Ліміт часу в справжньому тесті: ${limit} хв (тут не діє).` : ''} <button type="button" class="btn small secondary" data-act="ms34demooff" style="margin-left:8px">Вийти з пробного режиму</button></div>`
       : `<div class="notice small">👁 Так цей урок бачить учень (правильні відповіді тесту дивіться в пробному проходженні, розв’язання ДЗ видно нижче й бачите лише ви). Відповіді тут не надсилаються.${limit ? ` Ліміт часу для учня: ${limit} хв.` : ''} ${pill}</div>`;
-    const bottom = demo ? '' : `${attempts}<div class="card flex"><button type="button" class="btn" data-act="ms34edit" data-lid="${escHtml(lid)}">✏️ Редагувати</button>${hadTest ? libBtn(lid) : ''}</div>`;
+    const bottom = demo ? '' : `${attempts}<div class="card flex"><button type="button" class="btn" data-act="ms34edit" data-lid="${escHtml(lid)}">✏️ Редагувати</button>${hadTest ? libBtn(lid) : ''}${fromLib(sid, lid)}</div>`;
     return top + root.innerHTML + bottom;
   };
 })();
