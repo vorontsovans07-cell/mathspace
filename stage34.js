@@ -15,18 +15,22 @@
   const escHtml = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const say = (m, bad) => { if (typeof toast === 'function') toast(m, !!bad); else alert(m); };
   const baseStaff = window.staffLesson;
-  let editing = null, demo = false, curLid = null;
+  let editing = null, demo = false, curLid = null, mode = 'preview', attId = null;
   const cache = {};                       // lid -> { qmap, kmap, krow }
 
   window.addEventListener('hashchange', () => {
-    if (curLid && !location.hash.endsWith('/' + curLid)) { editing = null; demo = false; curLid = null; }
+    if (curLid && !location.hash.endsWith('/' + curLid)) { editing = null; demo = false; curLid = null; mode = 'preview'; attId = null; }
   });
 
   F.ms34off = async function () { /* перегляд: відповіді не надсилаються */ };
-  A.ms34edit = async function (el) { editing = el.dataset.lid; demo = false; renderApp(); window.scrollTo({ top: 0 }); };
-  A.ms34preview = async function () { editing = null; demo = false; renderApp(); window.scrollTo({ top: 0 }); };
-  A.ms34demo = async function () { editing = null; demo = true; renderApp(); window.scrollTo({ top: 0 }); };
-  A.ms34demooff = async function () { demo = false; renderApp(); window.scrollTo({ top: 0 }); };
+  A.ms34edit = async function (el) { editing = el.dataset.lid; demo = false; mode = 'preview'; attId = null; renderApp(); window.scrollTo({ top: 0 }); };
+  A.ms34preview = async function () { editing = null; demo = false; mode = 'preview'; attId = null; renderApp(); window.scrollTo({ top: 0 }); };
+  A.ms34demo = async function () { editing = null; demo = true; mode = 'preview'; attId = null; renderApp(); window.scrollTo({ top: 0 }); };
+
+  A.ms34att = async function () { editing = null; demo = false; mode = 'attempts'; attId = null; renderApp(); window.scrollTo({ top: 0 }); };
+  A.ms34attopen = async function (el) { mode = 'attempts'; attId = el.dataset.id; renderApp(); window.scrollTo({ top: 0 }); };
+  A.ms34attback = async function () { if (attId) attId = null; else mode = 'preview'; renderApp(); window.scrollTo({ top: 0 }); };
+  A.ms34demooff = async function () { demo = false; mode = 'preview'; attId = null; renderApp(); window.scrollTo({ top: 0 }); };
 
   /* ---------- правильна відповідь у вигляді HTML ---------- */
   function answerBody(q, c) {
@@ -225,11 +229,111 @@
       + `${qInput(x)}</div>`).join('')}<button class="btn">Відправити відповіді</button></form>`;
   }
 
+
+  /* ---------- спроби учня: список за датою й часом + розбір однієї спроби ---------- */
+  const LET = 'АБВГДЕЄЖЗИ';
+  const when = iso => new Date(iso).toLocaleString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const pv = raw => {
+    if (typeof raw !== 'string') return raw;
+    const t = raw.trim();
+    if (!t || t === '—') return null;
+    try { return JSON.parse(t); } catch (e) { return raw; }
+  };
+  const mark = (pick, right) => pick && right ? '✅' : pick ? '❌' : right ? '✔️' : '▫️';
+  const optRow = (txt, pick, right) => {
+    const cls = pick && right ? 'ok pick' : pick ? 'bad pick' : right ? 'ok' : '';
+    const tag = pick && right ? 'обрав(ла) · правильно' : pick ? 'обрав(ла) · неправильно' : right ? 'правильна відповідь' : '';
+    return `<div class="ms36-opt ${cls}">${mark(pick, right)} ${txt}${tag ? `<span class="ms36-tag">${tag}</span>` : ''}</div>`;
+  };
+  function answerView(a, q, c) {
+    const t = a.snapshot && a.snapshot.type;
+    const raw = a.answer;
+    if (t === 'long' || t === 'photo') {
+      const max = Number(a.snapshot.points) || 0;
+      return `<div class="notice" style="white-space:pre-wrap">${escHtml(raw ?? '—')}</div>`
+        + `<form data-form="review" data-id="${escHtml(a.id)}" class="flex"><input name="pts" type="number" min="0" max="${max}" step="0.5" required value="${a.points_awarded ?? ''}" placeholder="бали (макс. ${max})" style="width:170px">`
+        + `<input name="c" maxlength="2000" value="${escHtml(a.teacher_comment || '')}" placeholder="коментар" style="flex:1;min-width:160px"><button class="btn small">Зберегти</button></form>`;
+    }
+    if (t === 'short') {
+      const v = typeof raw === 'string' ? raw : (raw == null ? '' : String(raw));
+      const good = q ? [].concat(c || []).join(' | ') : '';
+      return `<div class="small">Відповідь учня: <b>${v ? escHtml(v) : '— (без відповіді)'}</b></div>` + (q ? `<div class="muted small">Правильно: ${escHtml(good)}</div>` : '');
+    }
+    const v = pv(raw);
+    const answered = !(v === null || v === undefined || v === '' || (Array.isArray(v) && !v.length));
+    if (!q) return `<div class="muted small">Завдання змінено після спроби, варіанти недоступні. Відповідь учня: ${escHtml(JSON.stringify(v))}</div>`;
+    if (t === 'single' || t === 'multiple') {
+      const rows = (q.options || []).map((o, j) => {
+        const pick = answered && (t === 'single' ? Number(v) === j : [].concat(v).map(Number).includes(j));
+        const right = t === 'single' ? c === j : [].concat(c || []).includes(j);
+        return optRow(`${j + 1}. ${escHtml(o)}`, pick, right);
+      }).join('');
+      return `<div class="ms36-list">${rows}${answered ? '' : '<div class="ms36-none">Учень не відповів</div>'}</div>`;
+    }
+    if (t === 'truefalse') {
+      const sv = v === true || v === 'true' ? true : v === false || v === 'false' ? false : null;
+      return `<div class="ms36-list">${optRow('Правда', sv === true, c === true)}${optRow('Неправда', sv === false, c === false)}${sv === null ? '<div class="ms36-none">Учень не відповів</div>' : ''}</div>`;
+    }
+    if (t === 'matching') {
+      const o = q.options || {}, left = o.left || [], right = o.right || [];
+      const sv = Array.isArray(v) ? v : [], cc = Array.isArray(c) ? c : [];
+      const nm = j => j === -1 ? 'немає відповідності' : (Number.isInteger(j) && right[j] !== undefined ? (LET[j] || j + 1) + '. ' + escHtml(right[j]) : '—');
+      const cols = typeof MSMatch !== 'undefined' && MSMatch.columns ? MSMatch.columns(o) : '';
+      const rows = left.map((tx, i) => {
+        const has = sv[i] !== undefined && sv[i] !== null, ok = has && Number(sv[i]) === cc[i];
+        return `<div class="ms36-opt ${ok ? 'ok pick' : has ? 'bad pick' : ''}">${ok ? '✅' : '❌'} ${i + 1}. ${escHtml(tx)} → <b>${has ? nm(Number(sv[i])) : 'без відповіді'}</b><span class="ms36-tag">${ok ? 'правильно' : 'правильно: ' + nm(cc[i])}</span></div>`;
+      }).join('');
+      return `<div class="ms36-list">${cols}${rows}</div>`;
+    }
+    return `<div class="muted small">${escHtml(JSON.stringify(v))}</div>`;
+  }
+
+  async function attemptsPage(sid, lid) {
+    const back = `<div class="card flex"><button type="button" class="btn secondary small" data-act="ms34attback">← ${attId ? 'До списку спроб' : 'До уроку'}</button></div>`;
+    const l = await sb.from('lessons').select('title').eq('id', lid).single();
+    const title = l.data ? l.data.title : 'Урок';
+    const at = await sb.from('attempts').select('*').eq('lesson_id', lid).order('created_at', { ascending: false }).limit(100);
+    if (at.error) throw at.error;
+    if (!attId) {
+      const rows = at.data.map(t => {
+        const sc = (+t.auto_score || 0) + (+t.manual_score || 0);
+        const done = t.status === 'graded';
+        return `<div class="row"><span><b>${escHtml(when(t.created_at))}</b></span><div class="end"><span class="pill ${done ? 'green' : 'amber'}">${sc} / ${t.max_score}${done ? '' : ' · чекає перевірки'}</span><button type="button" class="btn small" data-act="ms34attopen" data-id="${escHtml(t.id)}">Відкрити</button></div></div>`;
+      }).join('') || '<div class="empty">Спроб ще не було.</div>';
+      return back + `<div class="card"><h2>Спроби учня</h2><p class="muted small">${escHtml(title)}. Обрана спроба відкриється повністю: усі завдання, відповіді учня й правильні відповіді.</p>${rows}</div>`;
+    }
+    const t = at.data.find(x => x.id === attId);
+    if (!t) { attId = null; return attemptsPage(sid, lid); }
+    const [qr, ar] = await Promise.all([
+      sb.from('questions').select('*').eq('lesson_id', lid).order('sort_order'),
+      sb.from('attempt_answers').select('*').eq('attempt_id', attId)]);
+    if (qr.error) throw qr.error;
+    if (ar.error) throw ar.error;
+    let keys = {};
+    if (qr.data.length) {
+      const kr = await sb.from('question_keys').select('*').in('question_id', qr.data.map(x => x.id));
+      if (!kr.error) keys = Object.fromEntries(kr.data.map(x => [x.question_id, x.correct]));
+    }
+    const list = ar.data.slice().sort((a, b) => (a.snapshot.sort_order || 0) - (b.snapshot.sort_order || 0));
+    const sc = (+t.auto_score || 0) + (+t.manual_score || 0), done = t.status === 'graded';
+    const cards = list.map((a, i) => {
+      const sn = a.snapshot || {};
+      const q = (a.question_id && qr.data.find(x => x.id === a.question_id))
+        || qr.data.find(x => x.prompt === sn.prompt) || null;
+      const max = Number(sn.points) || 0, pa = a.points_awarded;
+      const badge = pa === null || pa === undefined ? '⏳' : Number(pa) >= max ? '✅' : Number(pa) > 0 ? '⚠️' : '❌';
+      return `<div class="card"><div class="flex"><b>${i + 1}.</b> ${badge}<span class="pill blue">${pa === null || pa === undefined ? '—' : pa} / ${max} б.</span></div>`
+        + `<p style="white-space:pre-wrap">${escHtml(sn.prompt)}</p>${answerView(a, q, q ? keys[q.id] : null)}</div>`;
+    }).join('') || '<div class="card"><div class="empty">У цій спробі немає відповідей.</div></div>';
+    return back + `<div class="card"><h2>Спроба від ${escHtml(when(t.created_at))}</h2><span class="pill ${done ? 'green' : 'amber'}">${sc} / ${t.max_score}${done ? '' : ' · чекає перевірки'}</span></div>` + cards;
+  }
+
   const libBtn = lid => `<button type="button" class="btn secondary" data-act="ms34tolib" data-lid="${escHtml(lid)}">📚 Додати тест у бібліотеку</button>`;
 
   /* ---------- сторінка уроку ---------- */
   window.staffLesson = async function (sid, lid) {
     curLid = lid;
+    if (mode === 'attempts') return attemptsPage(sid, lid);
     if (editing && editing !== lid) editing = null;
     if (editing === lid) {
       const page = await baseStaff.apply(this, arguments);
@@ -316,19 +420,16 @@
 
     await addAnswers(doc, root, lid, !demo);
 
-    // Огляд спроб учня: беремо готовий блок зі сторінки редагування
+    // Спроби учня: окрема кнопка
     let attempts = '';
     if (!demo) {
       try {
-        const editHtml = await baseStaff.apply(this, arguments);
-        if (typeof editHtml === 'string') {
-          const ed = new DOMParser().parseFromString('<div id="e">' + editHtml + '</div>', 'text/html');
-          const card = [...ed.querySelectorAll('.card')].find(c => {
-            const h = c.querySelector(':scope > h2');
-            return h && /^Спроби/i.test(h.textContent.trim());
-          });
-          if (card) attempts = card.outerHTML;
-        }
+        const [all, wait] = await Promise.all([
+          sb.from('attempts').select('id', { count: 'exact', head: true }).eq('lesson_id', lid),
+          sb.from('attempts').select('id', { count: 'exact', head: true }).eq('lesson_id', lid).neq('status', 'graded')]);
+        const n = all.count || 0, w = wait.count || 0;
+        attempts = `<div class="card flex"><button type="button" class="btn secondary" data-act="ms34att">📋 Спроби учня (${n})</button>`
+          + (w ? `<span class="pill amber">чекає перевірки: ${w}</span>` : '') + '</div>';
       } catch (e) { console.warn('MathSpace Stage 34 attempts:', e); }
     }
 
