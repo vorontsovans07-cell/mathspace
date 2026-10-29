@@ -254,17 +254,39 @@
 
     const doc = new DOMParser().parseFromString('<div id="r">' + html + '</div>', 'text/html');
     const root = doc.getElementById('r');
-    if (!root.querySelector('[data-q]')) {
-      const gate = [...root.querySelectorAll('.card')].find(c => {
-        const h = c.querySelector(':scope > h2');
-        return h && h.textContent.trim() === 'Тест' && !c.querySelector('[data-q]');
-      });
-      if (gate) {
-        const built = await buildTest(lid);
-        if (built) { gate.insertAdjacentHTML('beforebegin', built); gate.remove(); }
+    const findGate = () => [...root.querySelectorAll('.card')].find(c => {
+      const h = c.querySelector(':scope > h2');
+      return h && h.textContent.trim() === 'Тест' && !c.querySelector('[data-q]');
+    });
+    let hadTest = false;
+    if (demo) {
+      // пробний режим: показуємо всі завдання, як у учня після «Розпочати тест»
+      if (!root.querySelector('[data-q]')) {
+        const gate = findGate();
+        if (gate) {
+          const built = await buildTest(lid);
+          if (built) { gate.insertAdjacentHTML('beforebegin', built); gate.remove(); }
+        }
+      }
+      hadTest = !!root.querySelector('form[data-form="attempt"]');
+    } else {
+      // звичайний перегляд: тест згорнуто в одну картку з кнопкою, завдання не розписуємо
+      const form = root.querySelector('form[data-form="attempt"]');
+      const gate = form ? null : findGate();
+      const host = form || gate;
+      if (host) {
+        let n = form ? form.querySelectorAll('[data-q]').length : 0;
+        if (!form) {
+          const c = await sb.from('questions').select('id', { count: 'exact', head: true }).eq('lesson_id', lid);
+          n = c.count || 0;
+        }
+        host.insertAdjacentHTML('beforebegin',
+          `<div class="card"><h2>Тест</h2><p class="muted">Завдань: ${n} · ${limit ? 'ліміт часу ' + limit + ' хв' : 'без обмеження часу'}</p>`
+          + `<button type="button" class="btn" data-act="ms34demo">▶ Пройти тест як учень</button></div>`);
+        host.remove();
+        hadTest = true;
       }
     }
-    const hadTest = !!root.querySelector('form[data-form="attempt"]');
 
     root.querySelectorAll('a[href="#/t/lessons"]').forEach(a => {
       a.setAttribute('href', '#/t/lessons/' + sid);
@@ -315,8 +337,7 @@
       : '';
     const top = demo
       ? `<div class="notice small">▶ Пробний режим: так учень проходить тест. Відповіді нічого не змінюють і не зберігаються.${limit ? ` Ліміт часу в справжньому тесті: ${limit} хв (тут не діє).` : ''} <button type="button" class="btn small secondary" data-act="ms34demooff" style="margin-left:8px">Вийти з пробного режиму</button></div>`
-      : `<div class="notice small">👁 Так цей урок бачить учень (з правильними відповідями, їх бачите лише ви). Відповіді тут не надсилаються.${limit ? ` Ліміт часу для учня: ${limit} хв.` : ''} ${pill}
-          ${hadTest ? '<button type="button" class="btn small" data-act="ms34demo" style="margin-left:8px">▶ Пройти тест як учень</button>' : ''}</div>`;
+      : `<div class="notice small">👁 Так цей урок бачить учень (правильні відповіді тесту дивіться в пробному проходженні, розв’язання ДЗ видно нижче й бачите лише ви). Відповіді тут не надсилаються.${limit ? ` Ліміт часу для учня: ${limit} хв.` : ''} ${pill}</div>`;
     const bottom = demo ? '' : `${attempts}<div class="card flex"><button type="button" class="btn" data-act="ms34edit" data-lid="${escHtml(lid)}">✏️ Редагувати</button>${hadTest ? libBtn(lid) : ''}</div>`;
     return top + root.innerHTML + bottom;
   };
