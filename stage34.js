@@ -203,6 +203,28 @@
     } finally { if (el.isConnected) el.disabled = false; }
   };
 
+
+  /* Справжня сторінка учня ховає тест за кнопкою «Розпочати тест» (її може натискати лише учень).
+     Для викладача будуємо таку саму форму завдань напряму. */
+  async function buildTest(lid) {
+    if (typeof qInput !== 'function') return '';
+    const r = await sb.from('questions').select('*').eq('lesson_id', lid).order('sort_order');
+    if (r.error || !r.data.length) return '';
+    let urlBy = {};
+    const paths = r.data.map(x => x.image_path).filter(Boolean);
+    if (paths.length) {
+      try {
+        const u = await sb.storage.from('lessons').createSignedUrls(paths, 3600);
+        urlBy = Object.fromEntries((u.data || []).filter(x => x.signedUrl).map(x => [x.path, x.signedUrl]));
+      } catch (e) { /* без малюнків */ }
+    }
+    return `<form data-form="attempt" data-lid="${escHtml(lid)}">${r.data.map((x, i) =>
+      `<div class="card" data-q="${escHtml(x.id)}" data-t="${escHtml(x.qtype)}"><div class="flex"><b>${i + 1}.</b><span class="pill blue">${Number(x.points)} б.</span></div>`
+      + `<p style="white-space:pre-wrap">${escHtml(x.prompt)}</p>`
+      + (x.image_path && urlBy[x.image_path] ? `<img class="qimg" src="${escHtml(urlBy[x.image_path])}" alt="Малюнок до завдання">` : '')
+      + `${qInput(x)}</div>`).join('')}<button class="btn">Відправити відповіді</button></form>`;
+  }
+
   const libBtn = lid => `<button type="button" class="btn secondary" data-act="ms34tolib" data-lid="${escHtml(lid)}">📚 Додати тест у бібліотеку</button>`;
 
   /* ---------- сторінка уроку ---------- */
@@ -219,19 +241,29 @@
     if (typeof html !== 'string') return html;
 
     // Порожній урок: одразу режим редагування, бо дивитися ще нема на що
-    if (!html.includes('data-q="') && !html.includes('Домашнє завдання')) {
+    if (!html.includes('data-q="') && !html.includes('Розпочати тест') && !html.includes('Домашнє завдання')) {
       editing = lid; demo = false;
       return window.staffLesson.apply(this, arguments);
     }
 
-    let status = '';
+    let status = '', limit = null;
     try {
-      const r = await sb.from('lessons').select('status').eq('id', lid).single();
-      if (!r.error && r.data) status = r.data.status;
+      const r = await sb.from('lessons').select('status,time_limit_minutes').eq('id', lid).single();
+      if (!r.error && r.data) { status = r.data.status; limit = r.data.time_limit_minutes; }
     } catch (e) { /* не критично */ }
 
     const doc = new DOMParser().parseFromString('<div id="r">' + html + '</div>', 'text/html');
     const root = doc.getElementById('r');
+    if (!root.querySelector('[data-q]')) {
+      const gate = [...root.querySelectorAll('.card')].find(c => {
+        const h = c.querySelector(':scope > h2');
+        return h && h.textContent.trim() === 'Тест' && !c.querySelector('[data-q]');
+      });
+      if (gate) {
+        const built = await buildTest(lid);
+        if (built) { gate.insertAdjacentHTML('beforebegin', built); gate.remove(); }
+      }
+    }
     const hadTest = !!root.querySelector('form[data-form="attempt"]');
 
     root.querySelectorAll('a[href="#/t/lessons"]').forEach(a => {
@@ -282,8 +314,8 @@
       ? `<span class="pill ${status === 'published' ? 'green' : 'amber'}">${status === 'published' ? 'опубліковано' : 'чернетка: учень поки не бачить'}</span>`
       : '';
     const top = demo
-      ? `<div class="notice small">▶ Пробний режим: так учень проходить тест. Відповіді нічого не змінюють і не зберігаються. <button type="button" class="btn small secondary" data-act="ms34demooff" style="margin-left:8px">Вийти з пробного режиму</button></div>`
-      : `<div class="notice small">👁 Так цей урок бачить учень (з правильними відповідями, їх бачите лише ви). Відповіді тут не надсилаються. ${pill}
+      ? `<div class="notice small">▶ Пробний режим: так учень проходить тест. Відповіді нічого не змінюють і не зберігаються.${limit ? ` Ліміт часу в справжньому тесті: ${limit} хв (тут не діє).` : ''} <button type="button" class="btn small secondary" data-act="ms34demooff" style="margin-left:8px">Вийти з пробного режиму</button></div>`
+      : `<div class="notice small">👁 Так цей урок бачить учень (з правильними відповідями, їх бачите лише ви). Відповіді тут не надсилаються.${limit ? ` Ліміт часу для учня: ${limit} хв.` : ''} ${pill}
           ${hadTest ? '<button type="button" class="btn small" data-act="ms34demo" style="margin-left:8px">▶ Пройти тест як учень</button>' : ''}</div>`;
     const bottom = demo ? '' : `${attempts}<div class="card flex"><button type="button" class="btn" data-act="ms34edit" data-lid="${escHtml(lid)}">✏️ Редагувати</button>${hadTest ? libBtn(lid) : ''}</div>`;
     return top + root.innerHTML + bottom;
